@@ -1,23 +1,156 @@
 # FAFCare
 
-FAFCare is a patient portal application built as a two-workspace project: a React + Vite frontend and a Node.js + Express backend.
+FAFCare is an application with:
 
-## PostgreSQL setup
+- a React + Vite frontend;
+- a Node.js + Express backend;
+- a PostgreSQL database;
+- authentication for patients, doctors, and administrators.
 
-The backend now reads from PostgreSQL. Create a database, run `backend/src/config/schema.sql`, copy `backend/.env.example` to `backend/.env`, and adjust `DATABASE_URL` if needed.
+## 1. Requirements
 
-From the repository root:
+Install the following on your laptop:
+
+- Node.js LTS: https://nodejs.org/
+- PostgreSQL: https://www.postgresql.org/download/windows/
+- optionally, pgAdmin 4, which is usually installed with PostgreSQL.
+
+During PostgreSQL installation, remember the password you choose for the `postgres` user and keep the default port:
+
+```text
+5432
+```
+
+You do not need `psql` in your PATH if you use pgAdmin.
+
+## 2. Create the PostgreSQL database
+
+### Recommended method: pgAdmin
+
+1. Open **pgAdmin 4** from the Windows Start menu.
+2. Enter the **Master Password**, if pgAdmin asks for it.
+3. Expand **Servers** on the left.
+4. Select the installed PostgreSQL server, for example **PostgreSQL 16**.
+5. Enter the `postgres` password chosen during installation.
+6. Right-click **Databases**.
+7. Select **Create -> Database...**.
+8. In the **Database** field, enter exactly:
+
+```text
+fafcare
+```
+
+9. Set **Owner** to `postgres`.
+10. Click **Save**.
+
+If no server is listed in pgAdmin:
+
+1. Right-click **Servers** -> **Register** -> **Server...**.
+2. In the **General** tab, set **Name** to `Local PostgreSQL`.
+3. In the **Connection** tab, enter:
+
+```text
+Host name/address: localhost
+Port: 5432
+Maintenance database: postgres
+Username: postgres
+Password: your PostgreSQL password
+```
+
+4. Click **Save**, then create the `fafcare` database as described above.
+
+## 3. Run the SQL schema
+
+The schema creates the `users`, `patients`, `doctors`, `specialties`, `doctor_schedules`, `appointments`, `conversations`, `messages`, and `medical_records` tables.
+
+In pgAdmin:
+
+1. Right-click the `fafcare` database.
+2. Select **Query Tool**.
+3. Open `backend/src/config/schema.sql` in VS Code.
+4. Copy the entire file.
+5. Paste it into Query Tool.
+6. Click **Execute** or press `F5`.
+7. Confirm the success message, then refresh **Schemas -> public -> Tables**.
+
+## 4. Configure the backend
+
+Open a terminal in the project root and run:
 
 ```powershell
 cd backend
 npm install
+copy .env.example .env
+```
+
+Open `backend/.env` and replace the password in `DATABASE_URL` with your PostgreSQL password:
+
+```env
+DATABASE_URL=postgresql://postgres:YOUR_POSTGRES_PASSWORD@localhost:5432/fafcare?sslmode=disable
+PORT=5000
+SEED_PASSWORD=Password123!
+PGSSLMODE=disable
+```
+
+Replace `YOUR_POSTGRES_PASSWORD` with the password selected during PostgreSQL installation. Do not commit `.env` to Git.
+
+## 5. Import the CSV data
+
+From the `backend` folder, run:
+
+```powershell
 node src/config/seed.js
+```
+
+The final output should be:
+
+```text
+Seed completed. Test password: Password123!
+```
+
+The seed script:
+
+- reads the files from the `data` folder;
+- inserts data in foreign-key order;
+- creates users for patients and doctors;
+- creates the administrator account;
+- hashes passwords with `bcrypt`;
+- can be run again without duplicating the main records.
+
+CSV data for which there are no tables in the current schema, such as payments, notifications, and attachments, is not imported.
+
+## 6. Start the backend
+
+In a terminal, run:
+
+```powershell
+cd backend
 npm run dev
 ```
 
-The seed imports the supported CSV tables in foreign-key order and hashes all imported test passwords with bcrypt. Its default password is `Password123!`; set `SEED_PASSWORD` before seeding to use another one.
+The backend should be available at:
 
-In a second terminal:
+```text
+http://localhost:5000
+```
+
+Quickly verify it in a browser:
+
+```text
+http://localhost:5000/api/health
+```
+
+The expected response is:
+
+```json
+{"status":"ok"}
+```
+
+Keep this terminal open.
+
+## 7. Start the frontend
+
+Open a second terminal:
 
 ```powershell
 cd frontend
@@ -25,188 +158,93 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`. The frontend uses `VITE_API_URL` when set, otherwise it calls `http://localhost:5000/api`.
+Open the address shown by Vite, usually:
 
-## Repository Structure
-
-The repository is divided into two distinct workspaces:
-
-```
-FAFcare/
-├── frontend/             # Client-side application (React + Vite)
-│   ├── node_modules/     # Frontend dependencies
-│   ├── src/
-│   │   ├── App.jsx       # Main React application component
-│   │   ├── main.jsx      # React entry point (DOM mounting)
-│   │   └── index.css     # Global styles & Tailwind CSS directives
-│   ├── index.html        # Application HTML entry point
-│   ├── package.json      # Frontend dependencies & scripts
-│   └── vite.config.js    # Vite configuration
-│
-└── backend/              # Server-side API (Node.js + Express)
-    ├── node_modules/     # Backend dependencies
-    ├── package.json      # Backend dependencies & scripts
-    └── server.js         # Express server entry point
+```text
+http://localhost:5173
 ```
 
-## 1. Frontend Setup & Execution
+The frontend automatically calls the API at `http://localhost:5000/api`. To use a different backend address, create `frontend/.env` with:
 
-### Commands Executed
+```env
+VITE_API_URL=http://localhost:5000/api
+```
 
-```bash
-# Navigate to the frontend workspace
-cd D:\fafcare\FAFcare\frontend
+## 8. Test accounts
 
-# Install dependencies (React, Lucide Icons, Tailwind CSS, Vite)
-npm install --no-audit --no-fund
+All accounts imported by the seed script use this password:
 
-# Run the development server
+```text
+Password123!
+```
+
+### Patient
+
+```text
+Email: tatiana.braga1@example.md
+Password: Password123!
+```
+
+After signing in, you should see the patient dashboard, the patient's appointments, and the option to book an appointment.
+
+### Doctor
+
+```text
+Email: doctor.1@fafcare.local
+Password: Password123!
+```
+
+After signing in, you should see the doctor dashboard and the appointments assigned to that doctor.
+
+Doctor emails are generated by the seed script in the format `doctor.N@fafcare.local`, where `N` is the doctor's ID from `doctors.csv`.
+
+### Administrator
+
+```text
+Email: admin@fafcare.com
+Password: Password123!
+```
+
+After signing in, you should see the administrator dashboard with a summary of doctors, specialties, and appointments.
+
+To test all roles, click **Log out** after each test and sign in with the next account.
+
+## 9. Test booking as a patient
+
+1. Sign in with the patient account.
+2. Click **Book appointment**.
+3. Select a medical specialty.
+4. Select a doctor.
+5. Choose a date and time.
+6. Click **Confirm appointment**.
+7. Open **Appointments** and verify the new appointment.
+
+The appointment is sent through the API with `patient_id`, `doctor_id`, and `schedule_slot_id`, then saved in PostgreSQL.
+
+## 10. Useful commands
+
+```powershell
+# backend
+cd backend
+npm install
 npm run dev
-```
 
-### Key Configuration Files
+# reimport the data
+node src/config/seed.js
 
-**`frontend/package.json`**
-
-```json
-{
-  "name": "fafcare-frontend",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "lucide-react": "^0.300.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
-  },
-  "devDependencies": {
-    "@tailwindcss/vite": "^4.0.0",
-    "@vitejs/plugin-react": "^4.2.0",
-    "tailwindcss": "^4.0.0",
-    "vite": "^5.0.0"
-  }
-}
-```
-
-**`frontend/vite.config.js`**
-
-```javascript
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import tailwindcss from '@tailwindcss/vite';
-
-export default defineConfig({
-  plugins: [react(), tailwindcss()],
-});
-```
-
-**`frontend/index.html`**
-
-```html
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FAFCare — Patient Portal</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
-</html>
-```
-
-### Terminal Output (`npm run dev`)
-
-```
-VITE v5.x.x  ready in 280 ms
-
-  ➜  Local:   http://localhost:5173/
-  ➜  Network: use --host to expose
-  ➜  press h + enter to show help
-```
-
-## 2. Backend Setup & Execution
-
-### Commands Executed
-
-```bash
-# Navigate to the backend workspace in a second terminal window
-cd D:\fafcare\FAFcare\backend
-
-# Initialize Node.js package
-npm init -y
-
-# Install core backend packages
-npm install express cors dotenv
-
-# Run backend server in development watch mode
+# frontend, in a second terminal
+cd frontend
+npm install
 npm run dev
+
+# verify the frontend build
+npm run build
 ```
 
-### Key Configuration Files
+Ports used:
 
-**`backend/package.json`**
-
-```json
-{
-  "name": "backend",
-  "version": "1.0.0",
-  "description": "",
-  "main": "server.js",
-  "type": "module",
-  "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "cors": "^2.8.6",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1"
-  }
-}
-```
-
-**`backend/server.js`**
-
-```javascript
-import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-const app = express();
-const PORT = process.env.PORT || 5000;
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'FAFCare server is running!' });
-});
-
-app.listen(PORT, () => {
-  console.log(`Backend server running on http://localhost:${PORT}`);
-});
-```
-
-### Terminal Output (`npm run dev`)
-
-```
-> backend@1.0.0 dev
-> node --watch server.js
-
-Backend server running on http://localhost:5000
+```text
+PostgreSQL: 5432
+Backend API: 5000
+Frontend Vite: 5173
 ```

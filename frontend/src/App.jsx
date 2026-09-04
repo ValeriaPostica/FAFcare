@@ -7,9 +7,6 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  // --- SAVED ACCOUNTS (PATIENT AND DOCTOR) ---
-  const [savedAccounts, setSavedAccounts] = useState([]);
-
   // --- DOCTOR SPECIALTIES AND LIST ---
   const [specialties, setSpecialties] = useState([]);
   const [doctorsList, setDoctorsList] = useState([]);
@@ -18,7 +15,7 @@ export default function App() {
   const [appointments, setAppointments] = useState([]);
 
   // --- AUTH AND NAVIGATION STATE ---
-  const [authView, setAuthView] = useState('saved'); // 'saved' | 'login' | 'register'
+  const [authView, setAuthView] = useState('login'); // 'login' | 'register'
   const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'appointments' | 'labs' | 'medications'
 
@@ -55,15 +52,14 @@ export default function App() {
 
   const loadAppointments = async (user = currentUser) => {
     if (!user) return;
-    const query = user.role === 'Doctor' ? `doctor_id=${user.doctor_id}` : `patient_id=${user.patient_id}`;
+    const query = user.role === 'Doctor' ? `doctor_id=${user.doctor_id}` : user.role === 'Patient' ? `patient_id=${user.patient_id}` : '';
     const rows = await api(`/appointments?${query}`);
     setAppointments(rows.map((row) => ({ ...row, patientName: row.patient_name, date: row.scheduled_at.slice(0, 10), time: row.scheduled_at.slice(11, 16), location: 'FAFCare clinic' })));
   };
 
   useEffect(() => {
-    Promise.all([api('/accounts'), api('/specialties'), api('/doctors')])
-      .then(([accounts, remoteSpecialties, remoteDoctors]) => {
-        setSavedAccounts(accounts.map((account) => ({ ...account, avatarColor: 'bg-emerald-600' })));
+    Promise.all([api('/specialties'), api('/doctors')])
+      .then(([remoteSpecialties, remoteDoctors]) => {
         setSpecialties(remoteSpecialties.map((spec) => ({ ...spec, icon: spec.name.toLowerCase().includes('heart') ? Heart : Stethoscope })));
         setDoctorsList(remoteDoctors.map((doctor) => ({ ...doctor, specId: doctor.spec_id })));
       })
@@ -75,14 +71,6 @@ export default function App() {
   // --- HANDLERS ---
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
-  const handleQuickLogin = async (account) => {
-    try {
-      const user = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email: account.email, password: 'Password123!' }) });
-      setCurrentUser({ ...user, avatarColor: 'bg-emerald-600' });
-      setActiveTab('overview');
-    } catch (error) { setNotification(error.message); }
-  };
-
   const handleSubmitAuth = async (e) => {
     e.preventDefault();
     try {
@@ -91,8 +79,7 @@ export default function App() {
         alert('Passwords do not match!');
         return;
       }
-      const newAcc = await api('/auth/register', { method: 'POST', body: JSON.stringify(formData) });
-      setSavedAccounts([...savedAccounts, { ...newAcc, avatarColor: 'bg-emerald-600' }]);
+      await api('/auth/register', { method: 'POST', body: JSON.stringify(formData) });
       setNotification('Account created successfully!');
       setFormData({ fullName: '', email: '', phone: '', password: '', confirmPassword: '' });
       setAuthView('saved');
@@ -141,7 +128,7 @@ export default function App() {
               <Activity className="w-6 h-6 text-white" />
             </div>
             <h1 className="text-2xl font-bold">FAFCare Portal</h1>
-            <p className="text-emerald-100 text-sm mt-1">Select a test profile or sign in</p>
+            <p className="text-emerald-100 text-sm mt-1">Sign in to your FAFCare account</p>
           </div>
 
           <div className="p-8">
@@ -149,51 +136,6 @@ export default function App() {
               <div className="mb-4 p-3 bg-green-50 text-green-700 border border-green-200 rounded-lg flex items-center gap-2 text-sm">
                 <CheckCircle2 className="w-5 h-5 shrink-0" />
                 <span>{notification}</span>
-              </div>
-            )}
-
-            {authView === 'saved' && (
-              <div className="space-y-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                  Available profiles ({savedAccounts.length})
-                </p>
-
-                {savedAccounts.map((account) => (
-                  <button
-                    key={account.id}
-                    onClick={() => handleQuickLogin(account)}
-                    className="w-full flex items-center justify-between p-3.5 border border-slate-200 rounded-xl hover:border-emerald-500 hover:bg-emerald-50/50 transition group text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 ${account.avatarColor} text-white font-bold rounded-full flex items-center justify-center text-sm shadow-sm`}>
-                        {account.fullName.split(' ').map((n) => n[0]).join('')}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-semibold text-slate-800 text-sm group-hover:text-emerald-600 transition">
-                            {account.fullName}
-                          </h4>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${account.role === 'Doctor' ? 'bg-purple-100 text-purple-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                            {account.role === 'Doctor' ? 'DOCTOR' : 'PATIENT'}
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-500">{account.email}</p>
-                      </div>
-                    </div>
-                    <span className="text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full font-medium group-hover:bg-emerald-100 group-hover:text-emerald-700 transition">
-                      Log in
-                    </span>
-                  </button>
-                ))}
-
-                <div className="pt-4 border-t border-slate-100 space-y-2">
-                  <button onClick={() => setAuthView('login')} className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg text-sm transition flex items-center justify-center gap-2">
-                    <Mail className="w-4 h-4" /> Sign in with email
-                  </button>
-                  <button onClick={() => setAuthView('register')} className="w-full py-2.5 px-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 font-medium rounded-lg text-sm transition flex items-center justify-center gap-2">
-                    <PlusCircle className="w-4 h-4" /> Register new patient
-                  </button>
-                </div>
               </div>
             )}
 
@@ -222,6 +164,9 @@ export default function App() {
                 <button type="submit" className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg text-sm transition">
                   {authView === 'login' ? 'Log in' : 'Create account'}
                 </button>
+                <button type="button" onClick={() => setAuthView(authView === 'login' ? 'register' : 'login')} className="w-full text-sm text-emerald-600 hover:underline">
+                  {authView === 'login' ? 'Register new patient' : 'Back to login'}
+                </button>
               </form>
             )}
           </div>
@@ -233,6 +178,30 @@ export default function App() {
   // =========================================================================
   // 2. DOCTOR DASHBOARD (IF AUTHENTICATED AS DOCTOR)
   // =========================================================================
+  if (currentUser.role === 'Admin') {
+    return (
+      <div className="min-h-screen bg-slate-100 flex flex-col">
+        <header className="bg-white border-b border-slate-200">
+          <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-slate-800 rounded-xl text-white"><ShieldCheck className="w-6 h-6" /></div>
+              <div><span className="font-bold text-lg text-slate-900">FAFCare Administration</span><span className="text-xs bg-slate-100 text-slate-700 font-semibold px-2 py-0.5 rounded ml-2">Admin</span></div>
+            </div>
+            <button onClick={() => setCurrentUser(null)} className="p-2 text-slate-600 hover:text-red-600 rounded-lg hover:bg-slate-100"><LogOut className="w-5 h-5" /></button>
+          </div>
+        </header>
+        <main className="max-w-7xl mx-auto px-4 py-8 w-full flex-1 space-y-6">
+          <div><h2 className="text-2xl font-bold text-slate-800">Administration dashboard</h2><p className="text-sm text-slate-500 mt-1">System overview and management access</p></div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"><p className="text-sm text-slate-500">Registered doctors</p><p className="text-3xl font-bold text-slate-800 mt-2">{doctorsList.length}</p></div>
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"><p className="text-sm text-slate-500">Specialties</p><p className="text-3xl font-bold text-slate-800 mt-2">{specialties.length}</p></div>
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"><p className="text-sm text-slate-500">Appointments</p><p className="text-3xl font-bold text-slate-800 mt-2">{appointments.length}</p></div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   if (currentUser.role === 'Doctor') {
     const doctorAppointments = appointments.filter((a) => a.doctor === currentUser.fullName);
 

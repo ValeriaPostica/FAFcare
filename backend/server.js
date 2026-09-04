@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { pool } from './src/config/db.js';
-import { listAccounts, login, register } from './src/controllers/authController.js';
+import { login, register } from './src/controllers/authController.js';
 import { doctors, schedules, specialties } from './src/controllers/catalogController.js';
 import { createAppointment, listAppointments } from './src/controllers/appointmentController.js';
 import { records } from './src/controllers/medicalController.js';
@@ -16,7 +16,6 @@ app.use(express.json());
 app.get('/api/health', async (req, res, next) => {
   try { await pool.query('SELECT 1'); res.json({ status: 'ok' }); } catch (error) { next(error); }
 });
-app.get('/api/accounts', listAccounts);
 app.post('/api/auth/login', login);
 app.post('/api/auth/register', register);
 app.get('/api/specialties', specialties);

@@ -78,6 +78,12 @@ async function seed() {
         [doctorId, userId, integerOr(row.specialty_id, null), integerOr(row.experience_years), price]);
     }
 
+    await client.query(`INSERT INTO users (id, email, phone, password_hash, role, full_name)
+      VALUES ($1, 'admin@fafcare.com', NULL, $2, 'admin', 'FAFCare Administrator')
+      ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash,
+      full_name = EXCLUDED.full_name, role = EXCLUDED.role`,
+      [uuidFor('user', 'admin'), passwordHash]);
+
     for (const row of await csvRows('doctor_schedules.csv')) {
       await client.query(`INSERT INTO doctor_schedules (id, doctor_id, date, start_time, end_time, is_available)
         VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE SET date = EXCLUDED.date,
