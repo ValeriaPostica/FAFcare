@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Activity, Calendar, FileText, Pill, User, LogOut, PlusCircle, ArrowLeft, 
   Mail, Lock, Phone, Eye, EyeOff, ShieldCheck, CheckCircle2, Clock, 
@@ -8,47 +8,14 @@ import {
 
 export default function App() {
   // --- SAVED ACCOUNTS (PATIENT AND DOCTOR) ---
-  const [savedAccounts, setSavedAccounts] = useState([
-    {
-      id: 1,
-      fullName: 'Alex Johnson',
-      email: 'alex.johnson@example.com',
-      phone: '+1 (555) 234-5678',
-      role: 'Patient',
-      avatarColor: 'bg-emerald-600',
-    },
-    {
-      id: 2,
-      fullName: 'Dr. Sarah Smith',
-      email: 'sarah.smith@fafcare.com',
-      phone: '+1 (555) 999-0011',
-      role: 'Doctor',
-      specialty: 'Cardiologist',
-      avatarColor: 'bg-emerald-600',
-    },
-  ]);
+  const [savedAccounts, setSavedAccounts] = useState([]);
 
   // --- DOCTOR SPECIALTIES AND LIST ---
-  const specialties = [
-    { id: 'cardiology', name: 'Cardiology', icon: Heart, desc: 'Heart and vascular diseases' },
-    { id: 'general', name: 'General Practice', icon: Stethoscope, desc: 'Primary care and consultations' },
-    { id: 'neurology', name: 'Neurology', icon: Activity, desc: 'Nervous system and brain' },
-    { id: 'pediatrics', name: 'Pediatrics', icon: Users, desc: 'Children’s health' },
-  ];
-
-  const doctorsList = [
-    { id: 101, name: 'Dr. Sarah Smith', spec: 'Cardiology', specId: 'cardiology', location: 'Building A, room 302', experience: '12 years' },
-    { id: 102, name: 'Dr. Michael Chen', spec: 'General Practice', specId: 'general', location: 'Building B, room 105', experience: '8 years' },
-    { id: 103, name: 'Dr. Elena Rostova', spec: 'Neurology', specId: 'neurology', location: 'Building A, room 410', experience: '15 years' },
-    { id: 104, name: 'Dr. James Wilson', spec: 'Pediatrics', specId: 'pediatrics', location: 'Building C, room 201', experience: '10 years' },
-  ];
+  const [specialties, setSpecialties] = useState([]);
+  const [doctorsList, setDoctorsList] = useState([]);
 
   // --- APPOINTMENTS LIST ---
-  const [appointments, setAppointments] = useState([
-    { id: 1, patientName: 'Alex Johnson', doctor: 'Dr. Sarah Smith', spec: 'Cardiology', date: '2026-09-12', time: '10:30 AM', status: 'Upcoming', location: 'Building A, room 302' },
-    { id: 2, patientName: 'Emma Watson', doctor: 'Dr. Sarah Smith', spec: 'Cardiology', date: '2026-09-14', time: '02:00 PM', status: 'Upcoming', location: 'Building A, room 302' },
-    { id: 3, patientName: 'Alex Johnson', doctor: 'Dr. Michael Chen', spec: 'General Practice', date: '2026-09-18', time: '02:00 PM', status: 'Upcoming', location: 'Building B, room 105' },
-  ]);
+  const [appointments, setAppointments] = useState([]);
 
   // --- AUTH AND NAVIGATION STATE ---
   const [authView, setAuthView] = useState('saved'); // 'saved' | 'login' | 'register'
@@ -69,64 +36,84 @@ export default function App() {
   const [formData, setFormData] = useState({ fullName: '', email: '', phone: '', password: '', confirmPassword: '' });
 
   const availableTimeSlots = ['09:00 AM', '10:30 AM', '01:15 PM', '03:00 PM', '04:30 PM'];
+  const to24Hour = (time) => {
+    const [clock, meridiem] = time.split(' ');
+    let [hours, minutes] = clock.split(':').map(Number);
+    if (meridiem === 'PM' && hours !== 12) hours += 12;
+    if (meridiem === 'AM' && hours === 12) hours = 0;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+  };
+
+  const api = async (path, options = {}) => {
+    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}${path}`, {
+      headers: { 'Content-Type': 'application/json', ...options.headers }, ...options,
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || 'Request failed');
+    return body;
+  };
+
+  const loadAppointments = async (user = currentUser) => {
+    if (!user) return;
+    const query = user.role === 'Doctor' ? `doctor_id=${user.doctor_id}` : `patient_id=${user.patient_id}`;
+    const rows = await api(`/appointments?${query}`);
+    setAppointments(rows.map((row) => ({ ...row, patientName: row.patient_name, date: row.scheduled_at.slice(0, 10), time: row.scheduled_at.slice(11, 16), location: 'FAFCare clinic' })));
+  };
+
+  useEffect(() => {
+    Promise.all([api('/accounts'), api('/specialties'), api('/doctors')])
+      .then(([accounts, remoteSpecialties, remoteDoctors]) => {
+        setSavedAccounts(accounts.map((account) => ({ ...account, avatarColor: 'bg-emerald-600' })));
+        setSpecialties(remoteSpecialties.map((spec) => ({ ...spec, icon: spec.name.toLowerCase().includes('heart') ? Heart : Stethoscope })));
+        setDoctorsList(remoteDoctors.map((doctor) => ({ ...doctor, specId: doctor.spec_id })));
+      })
+      .catch((error) => setNotification(`API unavailable: ${error.message}`));
+  }, []);
+
+  useEffect(() => { loadAppointments().catch(() => {}); }, [currentUser]);
 
   // --- HANDLERS ---
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
-  const handleQuickLogin = (account) => {
-    setCurrentUser(account);
-    setActiveTab('overview');
+  const handleQuickLogin = async (account) => {
+    try {
+      const user = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email: account.email, password: 'Password123!' }) });
+      setCurrentUser({ ...user, avatarColor: 'bg-emerald-600' });
+      setActiveTab('overview');
+    } catch (error) { setNotification(error.message); }
   };
 
-  const handleSubmitAuth = (e) => {
+  const handleSubmitAuth = async (e) => {
     e.preventDefault();
-    if (authView === 'register') {
+    try {
+      if (authView === 'register') {
       if (formData.password !== formData.confirmPassword) {
         alert('Passwords do not match!');
         return;
       }
-      const newAcc = {
-        id: Date.now(),
-        fullName: formData.fullName,
-        email: formData.email,
-        phone: formData.phone || '+1 (555) 000-0000',
-        role: 'Patient',
-        avatarColor: 'bg-emerald-600',
-      };
-      setSavedAccounts([...savedAccounts, newAcc]);
+      const newAcc = await api('/auth/register', { method: 'POST', body: JSON.stringify(formData) });
+      setSavedAccounts([...savedAccounts, { ...newAcc, avatarColor: 'bg-emerald-600' }]);
       setNotification('Account created successfully!');
       setFormData({ fullName: '', email: '', phone: '', password: '', confirmPassword: '' });
       setAuthView('saved');
       setTimeout(() => setNotification(null), 3000);
-    } else {
-      const found = savedAccounts.find((a) => a.email.toLowerCase() === formData.email.toLowerCase());
-      const userToLog = found || {
-        id: Date.now(),
-        fullName: formData.email.split('@')[0],
-        email: formData.email,
-        phone: '+1 (555) 000-0000',
-        role: 'Patient',
-        avatarColor: 'bg-emerald-600',
-      };
-      setCurrentUser(userToLog);
+      } else {
+        const user = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email: formData.email, password: formData.password }) });
+        setCurrentUser({ ...user, avatarColor: 'bg-emerald-600' });
       setActiveTab('overview');
-    }
+      }
+    } catch (error) { setNotification(error.message); }
   };
 
   // Finish booking
-  const handleConfirmBooking = () => {
-    const newAppointment = {
-      id: Date.now(),
-      patientName: currentUser.fullName,
-      doctor: selectedDoctor.name,
-      spec: selectedDoctor.spec,
-      date: selectedDate,
-      time: selectedTime,
-      status: 'Upcoming',
-      location: selectedDoctor.location,
-    };
-
-    setAppointments([newAppointment, ...appointments]);
+  const handleConfirmBooking = async () => {
+    const slot = await api(`/doctors/${selectedDoctor.id}/schedules`);
+    const selectedSlot = slot.find((item) => item.date.toString().slice(0, 10) === selectedDate) || slot[0];
+    await api('/appointments', { method: 'POST', body: JSON.stringify({
+      patient_id: currentUser.patient_id, doctor_id: selectedDoctor.id, schedule_slot_id: selectedSlot?.id,
+      appointment_type: 'offline', scheduled_at: `${selectedDate}T${to24Hour(selectedTime)}`, price: selectedDoctor.price_per_consultation,
+    }) });
+    await loadAppointments(currentUser);
     setIsBookingOpen(false);
     setBookingStep(1);
     setSelectedSpec(null);

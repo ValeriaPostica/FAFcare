@@ -2,6 +2,31 @@
 
 FAFCare is a patient portal application built as a two-workspace project: a React + Vite frontend and a Node.js + Express backend.
 
+## PostgreSQL setup
+
+The backend now reads from PostgreSQL. Create a database, run `backend/src/config/schema.sql`, copy `backend/.env.example` to `backend/.env`, and adjust `DATABASE_URL` if needed.
+
+From the repository root:
+
+```powershell
+cd backend
+npm install
+node src/config/seed.js
+npm run dev
+```
+
+The seed imports the supported CSV tables in foreign-key order and hashes all imported test passwords with bcrypt. Its default password is `Password123!`; set `SEED_PASSWORD` before seeding to use another one.
+
+In a second terminal:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173`. The frontend uses `VITE_API_URL` when set, otherwise it calls `http://localhost:5000/api`.
+
 ## Repository Structure
 
 The repository is divided into two distinct workspaces:
