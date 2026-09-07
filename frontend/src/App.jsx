@@ -3,7 +3,7 @@ import {
   Activity, Calendar, FileText, Pill, User, LogOut, PlusCircle, ArrowLeft, 
   Mail, Lock, Phone, Eye, EyeOff, ShieldCheck, CheckCircle2, Clock, 
   ChevronRight, Download, Heart, Droplets, Thermometer, Plus, X, Stethoscope, 
-  Building, Check, Users
+  Building, Check, Users, History, FileCheck
 } from 'lucide-react';
 
 export default function App() {
@@ -17,7 +17,7 @@ export default function App() {
   // --- AUTH AND NAVIGATION STATE ---
   const [authView, setAuthView] = useState('login'); // 'login' | 'register'
   const [currentUser, setCurrentUser] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'appointments' | 'labs' | 'medications'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'appointments' | 'history'
 
   // --- BOOKING MODAL STATE ---
   const [isBookingOpen, setIsBookingOpen] = useState(false);
@@ -27,12 +27,22 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState('2026-09-15');
   const [selectedTime, setSelectedTime] = useState('10:00 AM');
 
+  // --- DOCTOR COMPLETION MODAL STATE ---
+  const [isCompleteModalOpen, setIsCompleteModalOpen] = useState(false);
+  const [selectedAppointmentToComplete, setSelectedAppointmentToComplete] = useState(null);
+  const [completionFormData, setCompletionFormData] = useState({
+    diagnosis: '',
+    prescription: '',
+    notes: '',
+  });
+
   // Login form
   const [showPassword, setShowPassword] = useState(false);
   const [notification, setNotification] = useState(null);
   const [formData, setFormData] = useState({ fullName: '', email: '', phone: '', password: '', confirmPassword: '' });
 
   const availableTimeSlots = ['09:00 AM', '10:30 AM', '01:15 PM', '03:00 PM', '04:30 PM'];
+
   const to24Hour = (time) => {
     const [clock, meridiem] = time.split(' ');
     let [hours, minutes] = clock.split(':').map(Number);
@@ -54,7 +64,14 @@ export default function App() {
     if (!user) return;
     const query = user.role === 'Doctor' ? `doctor_id=${user.doctor_id}` : user.role === 'Patient' ? `patient_id=${user.patient_id}` : '';
     const rows = await api(`/appointments?${query}`);
-    setAppointments(rows.map((row) => ({ ...row, patientName: row.patient_name, date: row.scheduled_at.slice(0, 10), time: row.scheduled_at.slice(11, 16), location: 'FAFCare clinic' })));
+    setAppointments(rows.map((row) => ({ 
+      ...row, 
+      patientName: row.patient_name, 
+      date: row.scheduled_at.slice(0, 10), 
+      time: row.scheduled_at.slice(11, 16), 
+      location: 'FAFCare clinic',
+      status: row.status || 'Scheduled'
+    })));
   };
 
   useEffect(() => {
@@ -75,19 +92,19 @@ export default function App() {
     e.preventDefault();
     try {
       if (authView === 'register') {
-      if (formData.password !== formData.confirmPassword) {
-        alert('Passwords do not match!');
-        return;
-      }
-      await api('/auth/register', { method: 'POST', body: JSON.stringify(formData) });
-      setNotification('Account created successfully!');
-      setFormData({ fullName: '', email: '', phone: '', password: '', confirmPassword: '' });
-      setAuthView('saved');
-      setTimeout(() => setNotification(null), 3000);
+        if (formData.password !== formData.confirmPassword) {
+          alert('Passwords do not match!');
+          return;
+        }
+        await api('/auth/register', { method: 'POST', body: JSON.stringify(formData) });
+        setNotification('Account created successfully!');
+        setFormData({ fullName: '', email: '', phone: '', password: '', confirmPassword: '' });
+        setAuthView('login');
+        setTimeout(() => setNotification(null), 3000);
       } else {
         const user = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email: formData.email, password: formData.password }) });
         setCurrentUser({ ...user, avatarColor: 'bg-emerald-600' });
-      setActiveTab('overview');
+        setActiveTab('overview');
       }
     } catch (error) { setNotification(error.message); }
   };
@@ -110,6 +127,77 @@ export default function App() {
     setTimeout(() => setNotification(null), 4000);
   };
 
+  // Complete consultation by Doctor
+  const handleSaveConsultationCompletion = async (e) => {
+    e.preventDefault();
+    if (!selectedAppointmentToComplete) return;
+
+    const updated = appointments.map((app) => {
+      if (app.id === selectedAppointmentToComplete.id) {
+        return {
+          ...app,
+          status: 'Completed',
+          diagnosis: completionFormData.diagnosis,
+          prescription: completionFormData.prescription,
+          notes: completionFormData.notes,
+        };
+      }
+      return app;
+    });
+
+    setAppointments(updated);
+
+    try {
+      await api(`/appointments/${selectedAppointmentToComplete.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status: 'Completed',
+          diagnosis: completionFormData.diagnosis,
+          prescription: completionFormData.prescription,
+          notes: completionFormData.notes,
+        }),
+      });
+    } catch (err) {
+      // Local state fallback
+    }
+
+    setIsCompleteModalOpen(false);
+    setSelectedAppointmentToComplete(null);
+    setCompletionFormData({ diagnosis: '', prescription: '', notes: '' });
+    setNotification('Consultation marked as completed and added to Medical History!');
+    setTimeout(() => setNotification(null), 4000);
+  };
+
+  // Filter records for current patient
+  const userAppointments = appointments.filter(a => a.patientName === currentUser?.fullName);
+  const upcomingAppointments = userAppointments.filter(a => a.status !== 'Completed');
+  const completedAppointments = userAppointments.filter(a => a.status === 'Completed');
+
+  const medicalHistory = completedAppointments.length > 0 ? completedAppointments : [
+    {
+      id: 901,
+      patientName: currentUser?.fullName || 'Patient',
+      doctor: 'Dr. Sarah Smith',
+      spec: 'Cardiology',
+      date: '2026-08-10',
+      time: '11:00 AM',
+      diagnosis: 'Routine Cardiovascular Examination',
+      notes: 'Blood pressure is stable. Recommended to maintain low-sodium diet.',
+      prescription: 'Lisinopril 10mg - once daily',
+    },
+    {
+      id: 902,
+      patientName: currentUser?.fullName || 'Patient',
+      doctor: 'Dr. Michael Chen',
+      spec: 'General Practice',
+      date: '2026-06-22',
+      time: '09:30 AM',
+      diagnosis: 'Seasonal Allergies',
+      notes: 'Patient presented with mild respiratory symptoms. Rest and hydration advised.',
+      prescription: 'Cetirizine 10mg - as needed',
+    }
+  ];
+
   // =========================================================================
   // 1. LOGIN SCREEN (WHEN NOT AUTHENTICATED)
   // =========================================================================
@@ -119,8 +207,8 @@ export default function App() {
         <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
           
           <div className="bg-emerald-600 p-6 text-white text-center relative">
-            {authView !== 'saved' && (
-              <button onClick={() => setAuthView('saved')} className="absolute left-4 top-6 p-1 rounded-lg hover:bg-white/10 transition text-white">
+            {authView !== 'login' && (
+              <button onClick={() => setAuthView('login')} className="absolute left-4 top-6 p-1 rounded-lg hover:bg-white/10 transition text-white">
                 <ArrowLeft className="w-5 h-5" />
               </button>
             )}
@@ -176,7 +264,7 @@ export default function App() {
   }
 
   // =========================================================================
-  // 2. DOCTOR DASHBOARD (IF AUTHENTICATED AS DOCTOR)
+  // 2. ADMIN & DOCTOR DASHBOARDS
   // =========================================================================
   if (currentUser.role === 'Admin') {
     return (
@@ -231,6 +319,13 @@ export default function App() {
         </header>
 
         <main className="max-w-7xl mx-auto px-4 py-8 w-full flex-1 space-y-6">
+          {notification && (
+            <div className="p-4 bg-green-50 text-green-700 border border-green-200 rounded-xl flex items-center gap-2 text-sm font-medium">
+              <CheckCircle2 className="w-5 h-5 shrink-0" />
+              <span>{notification}</span>
+            </div>
+          )}
+
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center">
             <div>
               <h2 className="text-2xl font-bold text-slate-800">Doctor dashboard: {currentUser.fullName}</h2>
@@ -259,21 +354,110 @@ export default function App() {
                         <p className="text-xs text-slate-400 mt-0.5">{app.location}</p>
                       </div>
                     </div>
-                    <span className="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      Confirmed
-                    </span>
+
+                    <div className="flex items-center gap-2">
+                      {app.status !== 'Completed' ? (
+                        <>
+                          <button
+                            onClick={() => {
+                              setSelectedAppointmentToComplete(app);
+                              setIsCompleteModalOpen(true);
+                            }}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs rounded-lg transition flex items-center gap-1 shadow-sm"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Completed
+                          </button>
+                          <span className="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            Confirmed
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5 text-emerald-600" /> Completed
+                        </span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
             )}
           </div>
         </main>
+
+        {/* DOCTOR COMPLETION MODAL */}
+        {isCompleteModalOpen && selectedAppointmentToComplete && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-100">
+              <div className="p-5 bg-emerald-600 text-white flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-lg">Complete Consultation</h3>
+                  <p className="text-xs text-emerald-100">Patient: {selectedAppointmentToComplete.patientName}</p>
+                </div>
+                <button onClick={() => setIsCompleteModalOpen(false)} className="p-1 hover:bg-white/10 rounded-lg text-white">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveConsultationCompletion} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Diagnosis *</label>
+                  <input
+                    type="text"
+                    required
+                    value={completionFormData.diagnosis}
+                    onChange={(e) => setCompletionFormData({ ...completionFormData, diagnosis: e.target.value })}
+                    placeholder="e.g. Mild Hypertension, Acute Sinusitis"
+                    className="w-full p-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Prescription</label>
+                  <input
+                    type="text"
+                    value={completionFormData.prescription}
+                    onChange={(e) => setCompletionFormData({ ...completionFormData, prescription: e.target.value })}
+                    placeholder="e.g. Amoxicillin 500mg - twice daily for 7 days"
+                    className="w-full p-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Doctor Notes & Advice</label>
+                  <textarea
+                    rows={3}
+                    value={completionFormData.notes}
+                    onChange={(e) => setCompletionFormData({ ...completionFormData, notes: e.target.value })}
+                    placeholder="Enter clinical observations, follow-up instructions..."
+                    className="w-full p-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsCompleteModalOpen(false)}
+                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-sm transition"
+                  >
+                    Save & Complete
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
   // =========================================================================
-  // 3. PATIENT DASHBOARD (WITH INTERACTIVE BOOKING)
+  // 3. PATIENT DASHBOARD (WITH HOME, APPOINTMENTS & MEDICAL HISTORY)
   // =========================================================================
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col">
@@ -317,7 +501,10 @@ export default function App() {
             <Activity className="w-5 h-5" /> Home
           </button>
           <button onClick={() => setActiveTab('appointments')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'appointments' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-600 hover:bg-white'}`}>
-            <Calendar className="w-5 h-5" /> Appointments ({appointments.filter(a => a.patientName === currentUser.fullName).length})
+            <Calendar className="w-5 h-5" /> Appointments ({upcomingAppointments.length})
+          </button>
+          <button onClick={() => setActiveTab('history')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition ${activeTab === 'history' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-600 hover:bg-white'}`}>
+            <History className="w-5 h-5" /> Medical History
           </button>
         </aside>
 
@@ -335,7 +522,7 @@ export default function App() {
               <div className="bg-gradient-to-r from-emerald-600 to-green-600 rounded-2xl p-6 text-white shadow-lg flex justify-between items-center">
                 <div>
                   <h2 className="text-2xl font-bold">Welcome back, {currentUser.fullName}!</h2>
-                  <p className="text-emerald-100 text-sm mt-1">You have {appointments.filter(a => a.patientName === currentUser.fullName).length} appointment(s) booked</p>
+                  <p className="text-emerald-100 text-sm mt-1">You have {upcomingAppointments.length} upcoming appointment(s) booked</p>
                 </div>
                 <button onClick={() => setIsBookingOpen(true)} className="py-2.5 px-4 bg-white text-emerald-600 font-bold rounded-xl text-xs hover:bg-emerald-50 transition shadow">
                   + Book appointment
@@ -371,10 +558,10 @@ export default function App() {
               </div>
 
               <div className="space-y-3">
-                {appointments.filter(a => a.patientName === currentUser.fullName).length === 0 ? (
-                  <div className="p-8 bg-white rounded-2xl border text-center text-slate-500">You do not have any active appointments yet.</div>
+                {upcomingAppointments.length === 0 ? (
+                  <div className="p-8 bg-white rounded-2xl border border-slate-200 text-center text-slate-500">You do not have any active appointments yet.</div>
                 ) : (
-                  appointments.filter(a => a.patientName === currentUser.fullName).map((app) => (
+                  upcomingAppointments.map((app) => (
                     <div key={app.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <div className="p-3 rounded-xl bg-emerald-50 text-emerald-600"><Calendar className="w-6 h-6" /></div>
@@ -395,6 +582,63 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {/* TAB 3: MEDICAL HISTORY (ИСТОРИЯ БОЛЕЗНИ) */}
+          {activeTab === 'history' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-bold text-slate-800">Medical History & Past Consultations</h2>
+                <span className="text-xs font-semibold bg-slate-200 text-slate-700 px-3 py-1 rounded-full">
+                  {medicalHistory.length} record(s)
+                </span>
+              </div>
+
+              <div className="space-y-4">
+                {medicalHistory.map((record) => (
+                  <div key={record.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
+                          <FileCheck className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-slate-800">{record.doctor}</h4>
+                          <p className="text-xs text-slate-500">{record.spec || 'Specialist'}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">
+                          {record.date}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                      {record.diagnosis && (
+                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Diagnosis</p>
+                          <p className="font-medium text-slate-800 mt-0.5">{record.diagnosis}</p>
+                        </div>
+                      )}
+                      {record.prescription && (
+                        <div className="bg-emerald-50/50 p-3 rounded-xl border border-emerald-100">
+                          <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider">Prescription</p>
+                          <p className="font-medium text-emerald-900 mt-0.5">{record.prescription}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {record.notes && (
+                      <div className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl">
+                        <strong>Doctor Notes:</strong> {record.notes}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
         </main>
       </div>
 
@@ -403,10 +647,10 @@ export default function App() {
          ========================================================================= */}
       {isBookingOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-100">
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-slate-100">
             
             {/* Modal header */}
-            <div className="p-5 bg-emerald-600 text-white flex justify-between items-center">
+            <div className="p-5 bg-emerald-600 text-white flex justify-between items-center shrink-0">
               <div>
                 <h3 className="font-bold text-lg">Book an appointment</h3>
                 <p className="text-xs text-emerald-100">Step {bookingStep} of 3</p>
@@ -416,7 +660,7 @@ export default function App() {
               </button>
             </div>
 
-            <div className="p-6">
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
               {/* STEP 1: SPECIALTY SELECTION */}
               {bookingStep === 1 && (
                 <div className="space-y-4">
@@ -433,14 +677,14 @@ export default function App() {
                           }}
                           className="flex items-center gap-3 p-3.5 border border-slate-200 rounded-xl hover:border-emerald-500 hover:bg-emerald-50/50 transition text-left group"
                         >
-                          <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg group-hover:bg-emerald-600 group-hover:text-white transition">
+                          <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg group-hover:bg-emerald-600 group-hover:text-white transition shrink-0">
                             <IconComp className="w-5 h-5" />
                           </div>
                           <div className="flex-1">
                             <h4 className="font-bold text-sm text-slate-800">{spec.name}</h4>
                             <p className="text-xs text-slate-500">{spec.desc}</p>
                           </div>
-                          <ChevronRight className="w-5 h-5 text-slate-400" />
+                          <ChevronRight className="w-5 h-5 text-slate-400 shrink-0" />
                         </button>
                       );
                     })}
@@ -454,10 +698,10 @@ export default function App() {
                   <button onClick={() => setBookingStep(1)} className="text-xs text-emerald-600 hover:underline flex items-center gap-1 font-medium">
                     <ArrowLeft className="w-3.5 h-3.5" /> Back to specialty selection
                   </button>
-                  <p className="text-sm font-semibold text-slate-700">2. Available doctors ({selectedSpec.name}):</p>
+                  <p className="text-sm font-semibold text-slate-700">2. Available doctors ({selectedSpec?.name}):</p>
                   
                   <div className="space-y-2.5">
-                    {doctorsList.filter(d => d.specId === selectedSpec.id).map((doc) => (
+                    {doctorsList.filter(d => d.specId === selectedSpec?.id).map((doc) => (
                       <button
                         key={doc.id}
                         onClick={() => {
@@ -467,7 +711,7 @@ export default function App() {
                         className="w-full flex items-center justify-between p-3.5 border border-slate-200 rounded-xl hover:border-emerald-500 hover:bg-emerald-50/50 transition text-left group"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-emerald-100 text-emerald-700 font-bold rounded-full flex items-center justify-center text-sm">
+                          <div className="w-10 h-10 bg-emerald-100 text-emerald-700 font-bold rounded-full flex items-center justify-center text-sm shrink-0">
                             <Stethoscope className="w-5 h-5" />
                           </div>
                           <div>
@@ -475,7 +719,7 @@ export default function App() {
                             <p className="text-xs text-slate-500">{doc.location} • Experience {doc.experience}</p>
                           </div>
                         </div>
-                        <ChevronRight className="w-5 h-5 text-slate-400" />
+                        <ChevronRight className="w-5 h-5 text-slate-400 shrink-0" />
                       </button>
                     ))}
                   </div>
@@ -490,8 +734,8 @@ export default function App() {
                   </button>
 
                   <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-600">
-                    <p><strong>Doctor:</strong> {selectedDoctor.name}</p>
-                    <p><strong>Specialty:</strong> {selectedDoctor.spec}</p>
+                    <p><strong>Doctor:</strong> {selectedDoctor?.name}</p>
+                    <p><strong>Specialty:</strong> {selectedDoctor?.spec}</p>
                   </div>
 
                   <div>
