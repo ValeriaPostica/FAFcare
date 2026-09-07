@@ -13,11 +13,13 @@ export default function App() {
 
   // --- APPOINTMENTS LIST ---
   const [appointments, setAppointments] = useState([]);
+  const [booklet, setBooklet] = useState(null);
+  const [bookletLoading, setBookletLoading] = useState(false);
 
   // --- AUTH AND NAVIGATION STATE ---
   const [authView, setAuthView] = useState('login'); // 'login' | 'register'
   const [currentUser, setCurrentUser] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'appointments' | 'history'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'appointments' | 'history' | 'booklet'
 
   // --- BOOKING MODAL STATE ---
   const [isBookingOpen, setIsBookingOpen] = useState(false);
@@ -85,6 +87,19 @@ export default function App() {
 
   useEffect(() => { loadAppointments().catch(() => {}); }, [currentUser]);
 
+  useEffect(() => {
+    if (!currentUser?.patient_id) {
+      setBooklet(null);
+      return;
+    }
+
+    setBookletLoading(true);
+    api(`/patient/booklet/${currentUser.patient_id}`)
+      .then(setBooklet)
+      .catch((error) => setNotification(`Medical booklet unavailable: ${error.message}`))
+      .finally(() => setBookletLoading(false));
+  }, [currentUser]);
+
   // --- HANDLERS ---
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
@@ -148,6 +163,20 @@ export default function App() {
     setAppointments(updated);
 
     try {
+      await api('/medical-records', {
+        method: 'POST',
+        body: JSON.stringify({
+          patient_id: selectedAppointmentToComplete.patient_id,
+          doctor_id: currentUser.doctor_id,
+          diagnosis: completionFormData.diagnosis,
+          notes: completionFormData.notes,
+        }),
+      });
+    } catch (err) {
+      setNotification(`Consultation saved locally, but medical record was not stored: ${err.message}`);
+    }
+
+    try {
       await api(`/appointments/${selectedAppointmentToComplete.id}`, {
         method: 'PATCH',
         body: JSON.stringify({
@@ -161,6 +190,22 @@ export default function App() {
       // Local state fallback
     }
 
+    if (completionFormData.prescription?.trim() && currentUser.doctor_id && selectedAppointmentToComplete.patient_id) {
+      try {
+        await api('/prescriptions', {
+          method: 'POST',
+          body: JSON.stringify({
+            patient_id: selectedAppointmentToComplete.patient_id,
+            doctor_id: currentUser.doctor_id,
+            medication_name: completionFormData.prescription.trim(),
+            dosage_instructions: 'Follow the instructions provided by your doctor.',
+          }),
+        });
+      } catch (err) {
+        setNotification(`Consultation saved, but prescription was not stored: ${err.message}`);
+      }
+    }
+
     setIsCompleteModalOpen(false);
     setSelectedAppointmentToComplete(null);
     setCompletionFormData({ diagnosis: '', prescription: '', notes: '' });
@@ -168,35 +213,13 @@ export default function App() {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // Filter records for current patient
+  // Patient-specific data loaded from PostgreSQL through the booklet endpoint.
   const userAppointments = appointments.filter(a => a.patientName === currentUser?.fullName);
   const upcomingAppointments = userAppointments.filter(a => a.status !== 'Completed');
-  const completedAppointments = userAppointments.filter(a => a.status === 'Completed');
-
-  const medicalHistory = completedAppointments.length > 0 ? completedAppointments : [
-    {
-      id: 901,
-      patientName: currentUser?.fullName || 'Patient',
-      doctor: 'Dr. Sarah Smith',
-      spec: 'Cardiology',
-      date: '2026-08-10',
-      time: '11:00 AM',
-      diagnosis: 'Routine Cardiovascular Examination',
-      notes: 'Blood pressure is stable. Recommended to maintain low-sodium diet.',
-      prescription: 'Lisinopril 10mg - once daily',
-    },
-    {
-      id: 902,
-      patientName: currentUser?.fullName || 'Patient',
-      doctor: 'Dr. Michael Chen',
-      spec: 'General Practice',
-      date: '2026-06-22',
-      time: '09:30 AM',
-      diagnosis: 'Seasonal Allergies',
-      notes: 'Patient presented with mild respiratory symptoms. Rest and hydration advised.',
-      prescription: 'Cetirizine 10mg - as needed',
-    }
-  ];
+  const bookletRecords = booklet?.verified_records || [];
+  const activePrescriptions = booklet?.active_prescriptions || [];
+  const bookletPatient = booklet?.patient || {};
+  const formatDate = (value) => value ? new Date(value).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : 'Not recorded';
 
   // =========================================================================
   // 1. LOGIN SCREEN (WHEN NOT AUTHENTICATED)
@@ -529,19 +552,29 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Health metrics */}
+              <button onClick={() => setActiveTab('booklet')} className="w-full rounded-2xl border border-teal-200 bg-white p-5 text-left shadow-sm transition hover:border-teal-500 hover:bg-teal-50/50">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="rounded-xl bg-teal-100 p-3 text-teal-700"><FileText className="h-6 w-6" /></div>
+                    <div><p className="font-bold text-slate-900">Digital Medical Booklet</p><p className="mt-1 text-sm text-slate-500">Open your electronic health passport, verified consultations and prescriptions.</p></div>
+                  </div>
+                  <ChevronRight className="h-5 w-5 shrink-0 text-teal-700" />
+                </div>
+              </button>
+
+              {/* Live medical profile summary */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
                   <div className="p-3 bg-red-50 text-red-500 rounded-xl"><Heart className="w-6 h-6" /></div>
-                  <div><p className="text-xs text-slate-500">Pulse</p><p className="text-xl font-bold text-slate-800">72 bpm</p></div>
+                  <div><p className="text-xs text-slate-500">Blood type / Rh</p><p className="text-xl font-bold text-slate-800">{bookletPatient.blood_type || 'Not recorded'}</p></div>
                 </div>
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
                   <div className="p-3 bg-emerald-50 text-emerald-500 rounded-xl"><Droplets className="w-6 h-6" /></div>
-                  <div><p className="text-xs text-slate-500">Blood pressure</p><p className="text-xl font-bold text-slate-800">120/80</p></div>
+                  <div><p className="text-xs text-slate-500">Known allergies</p><p className="text-sm font-bold text-slate-800">{bookletPatient.allergies || 'None recorded'}</p></div>
                 </div>
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
                   <div className="p-3 bg-amber-50 text-amber-500 rounded-xl"><Thermometer className="w-6 h-6" /></div>
-                  <div><p className="text-xs text-slate-500">Temperature</p><p className="text-xl font-bold text-slate-800">36.6 °C</p></div>
+                  <div><p className="text-xs text-slate-500">Chronic conditions</p><p className="text-sm font-bold text-slate-800">{bookletPatient.chronic_conditions || 'None recorded'}</p></div>
                 </div>
               </div>
             </div>
@@ -583,59 +616,107 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB 3: MEDICAL HISTORY (ИСТОРИЯ БОЛЕЗНИ) */}
+          {/* TAB 3: MEDICAL HISTORY */}
           {activeTab === 'history' && (
             <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold text-slate-800">Medical History & Past Consultations</h2>
-                <span className="text-xs font-semibold bg-slate-200 text-slate-700 px-3 py-1 rounded-full">
-                  {medicalHistory.length} record(s)
-                </span>
+              <div className="flex items-center justify-between gap-4">
+                <div><h2 className="text-xl font-bold text-slate-800">Medical History & Past Consultations</h2><p className="mt-1 text-sm text-slate-500">Verified records from your medical database.</p></div>
+                <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700">{bookletRecords.length} record(s)</span>
               </div>
+              {bookletRecords.length === 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">No verified medical history recorded yet.</div>
+              ) : (
+                <div className="space-y-4">
+                  {bookletRecords.map((record) => (
+                    <article key={record.id} className="space-y-3 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                      <div className="flex items-center justify-between gap-4 border-b border-slate-100 pb-3"><div className="flex items-center gap-3"><div className="rounded-xl bg-blue-50 p-2.5 text-blue-600"><FileCheck className="h-5 w-5" /></div><div><h4 className="font-bold text-slate-800">{record.verified_by_doctor || 'Verified medical consultation'}</h4><p className="text-xs text-slate-500">{formatDate(record.created_at)}</p></div></div><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Verified</span></div>
+                      <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-sm"><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Diagnosis</p><p className="mt-1 font-medium text-slate-800">{record.diagnosis}</p></div>
+                      {record.notes && <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600"><strong>Doctor Notes:</strong> {record.notes}</p>}
+                      {record.recommendations && <p className="rounded-xl bg-emerald-50/50 p-3 text-sm text-emerald-900"><strong>Recommendations:</strong> {record.recommendations}</p>}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
-              <div className="space-y-4">
-                {medicalHistory.map((record) => (
-                  <div key={record.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
-                          <FileCheck className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <h4 className="font-bold text-slate-800">{record.doctor}</h4>
-                          <p className="text-xs text-slate-500">{record.spec || 'Specialist'}</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">
-                          {record.date}
-                        </span>
-                      </div>
+          {/* TAB 4: DIGITAL MEDICAL BOOKLET */}
+          {activeTab === 'booklet' && (
+            <div className="space-y-6">
+              {bookletLoading ? (
+                <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center text-slate-500">Loading your digital medical booklet...</div>
+              ) : (
+                <>
+                  <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-teal-950 via-teal-800 to-emerald-700 p-7 text-white shadow-xl">
+                    <div className="absolute right-8 top-7 opacity-20"><ShieldCheck className="h-28 w-28" /></div>
+                    <p className="text-xs font-semibold tracking-[0.2em] text-teal-200">REPUBLIC OF MOLDOVA • FAFCare HEALTH SYSTEM</p>
+                    <div className="mt-10 max-w-2xl">
+                      <p className="text-sm font-medium text-teal-100">Electronic health passport & record</p>
+                      <h2 className="mt-1 text-3xl font-black tracking-tight">Individual Medical Booklet</h2>
+                      <p className="mt-4 text-sm text-teal-100">Authorized holder: <span className="font-bold text-white">{bookletPatient.full_name || currentUser.fullName}</span></p>
                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                      {record.diagnosis && (
-                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Diagnosis</p>
-                          <p className="font-medium text-slate-800 mt-0.5">{record.diagnosis}</p>
-                        </div>
-                      )}
-                      {record.prescription && (
-                        <div className="bg-emerald-50/50 p-3 rounded-xl border border-emerald-100">
-                          <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider">Prescription</p>
-                          <p className="font-medium text-emerald-900 mt-0.5">{record.prescription}</p>
-                        </div>
-                      )}
+                    <div className="mt-8 flex flex-wrap items-center gap-3 text-xs">
+                      <span className="rounded-full border border-teal-300/40 bg-white/10 px-3 py-1.5">Patient ID: PAT-{String(bookletPatient.id || currentUser.patient_id).slice(0, 8)}</span>
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/20 px-3 py-1.5 text-emerald-100"><ShieldCheck className="h-4 w-4" /> Cryptographically signed</span>
                     </div>
+                  </section>
 
-                    {record.notes && (
-                      <div className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl">
-                        <strong>Doctor Notes:</strong> {record.notes}
+                  <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div className="mb-5 flex items-center justify-between border-b border-slate-100 pb-4">
+                      <div><p className="text-xs font-semibold tracking-[0.16em] text-teal-700">FILE N° 01</p><h3 className="mt-1 text-xl font-bold text-slate-900">Patient Personal Record</h3></div>
+                      <User className="h-7 w-7 text-teal-700" />
+                    </div>
+                    <div className="grid grid-cols-1 gap-5 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                      <div><p className="text-xs text-slate-500">Full name</p><p className="mt-1 font-semibold text-slate-900">{bookletPatient.full_name || 'Not recorded'}</p></div>
+                      <div><p className="text-xs text-slate-500">Date of birth</p><p className="mt-1 font-semibold text-slate-900">{formatDate(bookletPatient.birth_date)}</p></div>
+                      <div><p className="text-xs text-slate-500">Medical insurance</p><p className="mt-1 font-semibold text-slate-900">{bookletPatient.insurance_type || 'Not recorded'}</p></div>
+                      <div><p className="text-xs text-slate-500">Blood type / Rh</p><p className="mt-1 font-semibold text-slate-900">{bookletPatient.blood_type || 'Not recorded'}</p></div>
+                      <div className="sm:col-span-2"><p className="text-xs text-slate-500">Known allergies & intolerances</p><p className="mt-1 font-semibold text-slate-900">{bookletPatient.allergies || 'None recorded'}</p></div>
+                      <div className="sm:col-span-2 lg:col-span-3"><p className="text-xs text-slate-500">Chronic conditions</p><p className="mt-1 font-semibold text-slate-900">{bookletPatient.chronic_conditions || 'None recorded'}</p></div>
+                    </div>
+                  </section>
+
+                  <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div className="mb-5 flex items-center justify-between border-b border-slate-100 pb-4"><div><p className="text-xs font-semibold tracking-[0.16em] text-teal-700">FILE N° 02</p><h3 className="mt-1 text-xl font-bold text-slate-900">Verified Consultations & Visits</h3></div><FileCheck className="h-7 w-7 text-teal-700" /></div>
+                    {bookletRecords.length === 0 ? (
+                      <p className="text-sm text-slate-500">No verified consultations are recorded yet.</p>
+                    ) : (
+                      <div className="space-y-4">
+                        {bookletRecords.map((record) => (
+                          <article key={record.id} className="rounded-xl border border-slate-200 p-4">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-emerald-600" /><h4 className="font-bold text-slate-900">Verified medical record</h4></div>
+                                <p className="mt-1 text-xs text-slate-500">{formatDate(record.created_at)}{record.verified_by_doctor ? ` • ${record.verified_by_doctor}` : ''}</p>
+                              </div>
+                              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Verified</span>
+                            </div>
+                            <p className="mt-4 text-sm"><span className="font-semibold text-slate-700">Diagnosis:</span> {record.diagnosis}</p>
+                            {record.notes && <p className="mt-2 text-sm text-slate-600"><span className="font-semibold text-slate-700">Notes:</span> {record.notes}</p>}
+                            {record.recommendations && <p className="mt-2 text-sm text-slate-600"><span className="font-semibold text-slate-700">Recommendations:</span> {record.recommendations}</p>}
+                          </article>
+                        ))}
                       </div>
                     )}
-                  </div>
-                ))}
-              </div>
+                  </section>
+
+                  <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div className="mb-5 flex items-center justify-between border-b border-slate-100 pb-4"><div><p className="text-xs font-semibold tracking-[0.16em] text-teal-700">FILE N° 03</p><h3 className="mt-1 text-xl font-bold text-slate-900">Active Prescriptions</h3></div><Pill className="h-7 w-7 text-teal-700" /></div>
+                    {activePrescriptions.length === 0 ? (
+                      <p className="text-sm text-slate-500">No active prescriptions are recorded yet.</p>
+                    ) : (
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {activePrescriptions.map((prescription) => (
+                          <article key={prescription.id} className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
+                            <div className="flex items-start justify-between gap-3"><div><h4 className="font-bold text-slate-900">{prescription.medication_name}</h4><p className="mt-2 text-sm text-slate-700">{prescription.dosage_instructions}</p></div><span className="whitespace-nowrap rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">Active</span></div>
+                            <p className="mt-3 text-xs text-slate-500">{prescription.duration_days ? `${prescription.duration_days} days` : 'Continuous'}{prescription.doctor_name ? ` • Issued by ${prescription.doctor_name}` : ''}</p>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                </>
+              )}
             </div>
           )}
 

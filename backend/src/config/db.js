@@ -9,7 +9,7 @@ export const pool = new Pool({
   port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,
   database: process.env.PGDATABASE || 'fafcare',
   user: process.env.PGUSER || 'postgres',
-  password: process.env.PGPASSWORD || 'postgres',
+  password: process.env.PGPASSWORD || undefined,
   max: 10,
 });
 

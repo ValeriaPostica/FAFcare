@@ -37,6 +37,20 @@ const valueOr = (value, fallback) => value === null || value === undefined || va
 const integerOr = (value, fallback = 0) => Number.isInteger(Number(value)) ? Number(value) : fallback;
 const numericOr = (value, fallback = null) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
+const demoBloodTypes = ['A+', 'A-', 'B+', 'B-', 'AB+', 'O+', 'O-'];
+const demoAllergies = ['None recorded', 'Pollen', 'Penicillin', 'Dust mites', 'Pollen and dust mites'];
+const demoConditions = ['None recorded', 'Asthma', 'Seasonal allergies', 'Chronic back pain', 'Hypertension'];
+
+function demoMedicalProfile(row) {
+  const index = Math.abs(Number(row.id) || 0);
+  return {
+    bloodType: demoBloodTypes[index % demoBloodTypes.length],
+    allergies: demoAllergies[index % demoAllergies.length],
+    chronicConditions: demoConditions[index % demoConditions.length],
+    emergencyContactName: `Emergency contact for ${row.full_name}`,
+  };
+}
+
 async function seed() {
   const client = await pool.connect();
   const passwordHash = await bcrypt.hash(defaultPassword, 12);
@@ -53,14 +67,27 @@ async function seed() {
     for (const row of patientRows) {
       const userId = uuidFor('user', valueOr(row.user_id, `patient-${row.id}`));
       const patientId = uuidFor('patient', row.id);
+      const emergencyContact = row.emergency_contact || null;
+      const demoProfile = demoMedicalProfile(row);
       await client.query(`INSERT INTO users (id, email, phone, password_hash, role, full_name, created_at)
         VALUES ($1, $2, $3, $4, 'patient', $5, COALESCE($6, CURRENT_TIMESTAMP))
         ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, phone = EXCLUDED.phone, full_name = EXCLUDED.full_name`,
         [userId, row.email, row.phone, passwordHash, row.full_name, row.created_at]);
-      await client.query(`INSERT INTO patients (id, user_id, birth_date, gender, address, insurance_type)
-        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE SET user_id = EXCLUDED.user_id,
-        birth_date = EXCLUDED.birth_date, gender = EXCLUDED.gender, address = EXCLUDED.address, insurance_type = EXCLUDED.insurance_type`,
-        [patientId, userId, row.birth_date, row.gender, row.address, row.insurance_type]);
+      await client.query(`INSERT INTO patients
+        (id, user_id, birth_date, gender, address, insurance_type,
+         blood_type, allergies, chronic_conditions, emergency_contact_name, emergency_contact_phone)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        ON CONFLICT (id) DO UPDATE SET user_id = EXCLUDED.user_id,
+        birth_date = EXCLUDED.birth_date, gender = EXCLUDED.gender, address = EXCLUDED.address,
+        insurance_type = EXCLUDED.insurance_type,
+        blood_type = COALESCE(patients.blood_type, EXCLUDED.blood_type),
+        allergies = COALESCE(patients.allergies, EXCLUDED.allergies),
+        chronic_conditions = COALESCE(patients.chronic_conditions, EXCLUDED.chronic_conditions),
+        emergency_contact_name = COALESCE(patients.emergency_contact_name, EXCLUDED.emergency_contact_name),
+        emergency_contact_phone = EXCLUDED.emergency_contact_phone`,
+        [patientId, userId, row.birth_date, row.gender, row.address, row.insurance_type,
+          demoProfile.bloodType, demoProfile.allergies, demoProfile.chronicConditions,
+          demoProfile.emergencyContactName, emergencyContact]);
     }
 
     const doctorRows = await csvRows('doctors.csv');

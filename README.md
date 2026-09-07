@@ -83,7 +83,7 @@ npm install
 copy .env.example .env
 ```
 
-Open `backend/.env` and replace the password in `DATABASE_URL` with your PostgreSQL password:
+Open `backend/.env` and replace `YOUR_POSTGRES_PASSWORD` with your own PostgreSQL password. Every developer can use a different password because `.env` is local and is not committed:
 
 ```env
 DATABASE_URL=postgresql://postgres:YOUR_POSTGRES_PASSWORD@localhost:5432/fafcare?sslmode=disable
@@ -92,7 +92,7 @@ SEED_PASSWORD=Password123!
 PGSSLMODE=disable
 ```
 
-Replace `YOUR_POSTGRES_PASSWORD` with the password selected during PostgreSQL installation. Do not commit `.env` to Git.
+If your password contains URL characters such as `@`, `:`, `/`, or `#`, URL-encode them in `DATABASE_URL`. For example, `pa@ss` becomes `pa%40ss`. Do not commit `.env` to Git.
 
 ## 5. Import the CSV data
 
@@ -116,6 +116,8 @@ The seed script:
 - creates the administrator account;
 - hashes passwords with `bcrypt`;
 - can be run again without duplicating the main records.
+
+The current CSV files do not include blood type, allergies, or chronic conditions. For the demo environment, `seed.js` generates deterministic sample values for those fields for every patient. These values are test data, not real medical information, and existing non-empty values are preserved.
 
 CSV data for which there are no tables in the current schema, such as payments, notifications, and attachments, is not imported.
 

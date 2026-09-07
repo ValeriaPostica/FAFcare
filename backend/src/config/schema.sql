@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     email VARCHAR(255) UNIQUE NOT NULL,
     phone VARCHAR(20),
@@ -11,22 +11,33 @@ CREATE TABLE users (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE patients (
+CREATE TABLE IF NOT EXISTS patients (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     birth_date DATE,
     gender VARCHAR(10),
     address TEXT,
-    insurance_type VARCHAR(50)
+    insurance_type VARCHAR(50),
+    blood_type VARCHAR(10),
+    allergies TEXT,
+    chronic_conditions TEXT,
+    emergency_contact_name VARCHAR(100),
+    emergency_contact_phone VARCHAR(20)
 );
 
-CREATE TABLE specialties (
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS blood_type VARCHAR(10);
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS allergies TEXT;
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS chronic_conditions TEXT;
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS emergency_contact_name VARCHAR(100);
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS emergency_contact_phone VARCHAR(20);
+
+CREATE TABLE IF NOT EXISTS specialties (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     description TEXT
 );
 
-CREATE TABLE doctors (
+CREATE TABLE IF NOT EXISTS doctors (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     specialty_id INT REFERENCES specialties(id),
@@ -34,7 +45,7 @@ CREATE TABLE doctors (
     price_per_consultation DECIMAL(10, 2)
 );
 
-CREATE TABLE doctor_schedules (
+CREATE TABLE IF NOT EXISTS doctor_schedules (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     doctor_id UUID REFERENCES doctors(id) ON DELETE CASCADE,
     date DATE NOT NULL,
@@ -43,7 +54,7 @@ CREATE TABLE doctor_schedules (
     is_available BOOLEAN DEFAULT TRUE
 );
 
-CREATE TABLE appointments (
+CREATE TABLE IF NOT EXISTS appointments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_id UUID REFERENCES patients(id),
     doctor_id UUID REFERENCES doctors(id),
@@ -55,14 +66,14 @@ CREATE TABLE appointments (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE conversations (
+CREATE TABLE IF NOT EXISTS conversations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_id UUID REFERENCES patients(id),
     doctor_id UUID REFERENCES doctors(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE messages (
+CREATE TABLE IF NOT EXISTS messages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
     sender_id UUID REFERENCES users(id),
@@ -71,11 +82,29 @@ CREATE TABLE messages (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE medical_records (
+CREATE TABLE IF NOT EXISTS medical_records (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_id UUID REFERENCES patients(id),
     diagnosis TEXT NOT NULL,
     notes TEXT,
     recommendations TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_verified BOOLEAN DEFAULT TRUE,
+    verified_by_doctor_id UUID REFERENCES doctors(id),
+    digital_signature_hash VARCHAR(255)
+);
+
+ALTER TABLE medical_records ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT TRUE;
+ALTER TABLE medical_records ADD COLUMN IF NOT EXISTS verified_by_doctor_id UUID REFERENCES doctors(id);
+ALTER TABLE medical_records ADD COLUMN IF NOT EXISTS digital_signature_hash VARCHAR(255);
+
+CREATE TABLE IF NOT EXISTS prescriptions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    patient_id UUID REFERENCES patients(id) ON DELETE CASCADE,
+    doctor_id UUID REFERENCES doctors(id),
+    medication_name VARCHAR(255) NOT NULL,
+    dosage_instructions TEXT NOT NULL,
+    duration_days INT,
+    status VARCHAR(20) DEFAULT 'active',
+    issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
