@@ -4,7 +4,7 @@ import { pool } from './src/config/db.js';
 import { login, register } from './src/controllers/authController.js';
 import { doctors, schedules, specialties } from './src/controllers/catalogController.js';
 import { createAppointment, listAppointments } from './src/controllers/appointmentController.js';
-import { records } from './src/controllers/medicalController.js';
+import { booklet, createMedicalRecord, createPrescription, records } from './src/controllers/medicalController.js';
 
 const app = express();
 const PORT = 5000;
@@ -24,6 +24,9 @@ app.get('/api/doctors/:doctorId/schedules', schedules);
 app.get('/api/appointments', listAppointments);
 app.post('/api/appointments', createAppointment);
 app.get('/api/patients/:patientId/medical-records', records);
+app.get('/api/patient/booklet/:patientId', booklet);
+app.post('/api/medical-records', createMedicalRecord);
+app.post('/api/prescriptions', createPrescription);
 
 app.use((error, req, res, next) => {
   console.error(error);
