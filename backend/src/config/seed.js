@@ -56,6 +56,7 @@ async function seed() {
   const passwordHash = await bcrypt.hash(defaultPassword, 12);
   try {
     await client.query('BEGIN');
+    await client.query('ALTER TABLE patients ADD COLUMN IF NOT EXISTS full_name VARCHAR(100)');
     const specialties = await csvRows('specialties.csv');
     for (const row of specialties) {
       await client.query(`INSERT INTO specialties (id, name, description) VALUES ($1, $2, $3)
@@ -74,10 +75,11 @@ async function seed() {
         ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, phone = EXCLUDED.phone, full_name = EXCLUDED.full_name`,
         [userId, row.email, row.phone, passwordHash, row.full_name, row.created_at]);
       await client.query(`INSERT INTO patients
-        (id, user_id, birth_date, gender, address, insurance_type,
+        (id, user_id, full_name, birth_date, gender, address, insurance_type,
          blood_type, allergies, chronic_conditions, emergency_contact_name, emergency_contact_phone)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (id) DO UPDATE SET user_id = EXCLUDED.user_id,
+        full_name = EXCLUDED.full_name,
         birth_date = EXCLUDED.birth_date, gender = EXCLUDED.gender, address = EXCLUDED.address,
         insurance_type = EXCLUDED.insurance_type,
         blood_type = COALESCE(patients.blood_type, EXCLUDED.blood_type),
@@ -85,7 +87,7 @@ async function seed() {
         chronic_conditions = COALESCE(patients.chronic_conditions, EXCLUDED.chronic_conditions),
         emergency_contact_name = COALESCE(patients.emergency_contact_name, EXCLUDED.emergency_contact_name),
         emergency_contact_phone = EXCLUDED.emergency_contact_phone`,
-        [patientId, userId, row.birth_date, row.gender, row.address, row.insurance_type,
+        [patientId, userId, row.full_name, row.birth_date, row.gender, row.address, row.insurance_type,
           demoProfile.bloodType, demoProfile.allergies, demoProfile.chronicConditions,
           demoProfile.emergencyContactName, emergencyContact]);
     }

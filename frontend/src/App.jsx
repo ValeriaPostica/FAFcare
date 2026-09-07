@@ -20,6 +20,15 @@ export default function App() {
   const [authView, setAuthView] = useState('login'); // 'login' | 'register'
   const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'appointments' | 'history' | 'booklet'
+  const [profileSurveyOpen, setProfileSurveyOpen] = useState(false);
+  const [profileSurveyData, setProfileSurveyData] = useState({
+    fullName: '',
+    birthDate: '',
+    insuranceType: '',
+    bloodType: '',
+    allergies: '',
+    chronicConditions: '',
+  });
 
   // --- BOOKING MODAL STATE ---
   const [isBookingOpen, setIsBookingOpen] = useState(false);
@@ -103,6 +112,28 @@ export default function App() {
   // --- HANDLERS ---
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
+  const handleProfileSurveyChange = (e) => setProfileSurveyData({ ...profileSurveyData, [e.target.name]: e.target.value });
+
+  const handleProfileSurveySubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const dateParts = profileSurveyData.birthDate.split('.');
+      const birthDate = dateParts.length === 3
+        ? `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`
+        : profileSurveyData.birthDate;
+      await api(`/patients/${currentUser.patient_id}/profile`, {
+        method: 'PATCH',
+        body: JSON.stringify({ ...profileSurveyData, birthDate }),
+      });
+      const updatedBooklet = await api(`/patient/booklet/${currentUser.patient_id}`);
+      setBooklet(updatedBooklet);
+      setCurrentUser({ ...currentUser, fullName: profileSurveyData.fullName });
+      setProfileSurveyOpen(false);
+      setNotification('Your medical profile was saved successfully.');
+      setTimeout(() => setNotification(null), 4000);
+    } catch (error) { setNotification(error.message); }
+  };
+
   const handleSubmitAuth = async (e) => {
     e.preventDefault();
     try {
@@ -111,11 +142,11 @@ export default function App() {
           alert('Passwords do not match!');
           return;
         }
-        await api('/auth/register', { method: 'POST', body: JSON.stringify(formData) });
-        setNotification('Account created successfully!');
+        const user = await api('/auth/register', { method: 'POST', body: JSON.stringify(formData) });
+        setCurrentUser({ ...user, avatarColor: 'bg-emerald-600' });
+        setProfileSurveyData({ ...profileSurveyData, fullName: formData.fullName });
+        setProfileSurveyOpen(true);
         setFormData({ fullName: '', email: '', phone: '', password: '', confirmPassword: '' });
-        setAuthView('login');
-        setTimeout(() => setNotification(null), 3000);
       } else {
         const user = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email: formData.email, password: formData.password }) });
         setCurrentUser({ ...user, avatarColor: 'bg-emerald-600' });
@@ -281,6 +312,52 @@ export default function App() {
               </form>
             )}
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (currentUser.role === 'Patient' && profileSurveyOpen) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+        <div className="max-w-2xl w-full bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+          <div className="bg-emerald-600 p-6 text-white">
+            <p className="text-emerald-100 text-xs font-semibold uppercase tracking-wider">Patient personal record</p>
+            <h1 className="text-2xl font-bold mt-1">Complete your medical profile</h1>
+            <p className="text-emerald-100 text-sm mt-2">This information will be saved to your medical card and shown on your dashboard.</p>
+          </div>
+          <form onSubmit={handleProfileSurveySubmit} className="p-6 sm:p-8 space-y-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-slate-700 mb-1">Full name</label>
+                <input type="text" name="fullName" required value={profileSurveyData.fullName} onChange={handleProfileSurveyChange} className="w-full px-3 py-2.5 border rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Date of birth</label>
+                <input type="text" name="birthDate" required value={profileSurveyData.birthDate} onChange={handleProfileSurveyChange} placeholder="DD.MM.YYYY" pattern="[0-9]{2}\.[0-9]{2}\.[0-9]{4}" inputMode="numeric" className="w-full px-3 py-2.5 border rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Medical insurance</label>
+                <input type="text" name="insuranceType" required value={profileSurveyData.insuranceType} onChange={handleProfileSurveyChange} className="w-full px-3 py-2.5 border rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Blood type / Rh</label>
+                <select name="bloodType" required value={profileSurveyData.bloodType} onChange={handleProfileSurveyChange} className="w-full px-3 py-2.5 border rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none bg-white">
+                  <option value="">Select blood type</option>
+                  {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((type) => <option key={type} value={type}>{type}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Known allergies & intolerances</label>
+                <input type="text" name="allergies" required value={profileSurveyData.allergies} onChange={handleProfileSurveyChange} className="w-full px-3 py-2.5 border rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-slate-700 mb-1">Chronic conditions</label>
+                <textarea name="chronicConditions" required value={profileSurveyData.chronicConditions} onChange={handleProfileSurveyChange} rows={3} className="w-full px-3 py-2.5 border rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none resize-y" />
+              </div>
+            </div>
+            <button type="submit" className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-sm transition">Save medical profile</button>
+          </form>
         </div>
       </div>
     );
@@ -561,6 +638,21 @@ export default function App() {
                   <ChevronRight className="h-5 w-5 shrink-0 text-teal-700" />
                 </div>
               </button>
+
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                  <div className="p-2.5 bg-teal-100 text-teal-700 rounded-xl"><User className="w-5 h-5" /></div>
+                  <div><h3 className="font-bold text-slate-900">Patient personal record</h3><p className="text-xs text-slate-500 mt-0.5">Your saved general medical information</p></div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-5 text-sm">
+                  <div><p className="text-xs text-slate-500">Full name</p><p className="mt-1 font-semibold text-slate-900">{bookletPatient.full_name || currentUser.fullName}</p></div>
+                  <div><p className="text-xs text-slate-500">Date of birth</p><p className="mt-1 font-semibold text-slate-900">{formatDate(bookletPatient.birth_date)}</p></div>
+                  <div><p className="text-xs text-slate-500">Medical insurance</p><p className="mt-1 font-semibold text-slate-900">{bookletPatient.insurance_type || 'Not recorded'}</p></div>
+                  <div><p className="text-xs text-slate-500">Blood type / Rh</p><p className="mt-1 font-semibold text-slate-900">{bookletPatient.blood_type || 'Not recorded'}</p></div>
+                  <div><p className="text-xs text-slate-500">Known allergies & intolerances</p><p className="mt-1 font-semibold text-slate-900">{bookletPatient.allergies || 'None recorded'}</p></div>
+                  <div><p className="text-xs text-slate-500">Chronic conditions</p><p className="mt-1 font-semibold text-slate-900">{bookletPatient.chronic_conditions || 'None recorded'}</p></div>
+                </div>
+              </div>
 
               {/* Live medical profile summary */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

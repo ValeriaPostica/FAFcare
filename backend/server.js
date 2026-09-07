@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { pool } from './src/config/db.js';
-import { login, register } from './src/controllers/authController.js';
+import { login, register, updatePatientProfile } from './src/controllers/authController.js';
 import { doctors, schedules, specialties } from './src/controllers/catalogController.js';
 import { createAppointment, listAppointments } from './src/controllers/appointmentController.js';
 import { booklet, createMedicalRecord, createPrescription, records } from './src/controllers/medicalController.js';
@@ -18,6 +18,7 @@ app.get('/api/health', async (req, res, next) => {
 });
 app.post('/api/auth/login', login);
 app.post('/api/auth/register', register);
+app.patch('/api/patients/:patientId/profile', updatePatientProfile);
 app.get('/api/specialties', specialties);
 app.get('/api/doctors', doctors);
 app.get('/api/doctors/:doctorId/schedules', schedules);

@@ -55,9 +55,40 @@ export async function register(req, res, next) {
       INSERT INTO users (email, phone, password_hash, role, full_name)
       VALUES ($1, $2, $3, 'patient', $4) RETURNING id, email, phone, full_name, role
     `, [email, phone || null, passwordHash, fullName]);
-    const patient = await client.query('INSERT INTO patients (user_id) VALUES ($1) RETURNING id', [user.rows[0].id]);
+    const patient = await client.query('INSERT INTO patients (user_id, full_name) VALUES ($1, $2) RETURNING id', [user.rows[0].id, fullName]);
     await client.query('COMMIT');
     res.status(201).json({ ...publicUser({ ...user.rows[0], patient_id: patient.rows[0].id }), doctor_id: null });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    next(error);
+  } finally { client.release(); }
+}
+
+export async function updatePatientProfile(req, res, next) {
+  const client = await (await import('../config/db.js')).pool.connect();
+  try {
+    const { fullName, birthDate, insuranceType, bloodType, allergies, chronicConditions } = req.body;
+    if (!fullName || !birthDate || !insuranceType || !bloodType || !allergies || !chronicConditions) {
+      return res.status(400).json({ error: 'All medical profile fields are required' });
+    }
+
+    await client.query('BEGIN');
+    const patient = await client.query(`
+      UPDATE patients
+      SET full_name = $1, birth_date = $2, insurance_type = $3, blood_type = $4,
+          allergies = $5, chronic_conditions = $6
+      WHERE id = $7
+      RETURNING id, full_name, birth_date, insurance_type, blood_type, allergies, chronic_conditions
+    `, [fullName, birthDate, insuranceType, bloodType, allergies, chronicConditions, req.params.patientId]);
+
+    if (!patient.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    await client.query('UPDATE users SET full_name = $1 WHERE id = (SELECT user_id FROM patients WHERE id = $2)', [fullName, req.params.patientId]);
+    await client.query('COMMIT');
+    res.json(patient.rows[0]);
   } catch (error) {
     await client.query('ROLLBACK');
     next(error);

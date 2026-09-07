@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS patients (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    full_name VARCHAR(100),
     birth_date DATE,
     gender VARCHAR(10),
     address TEXT,
@@ -25,6 +26,7 @@ CREATE TABLE IF NOT EXISTS patients (
     emergency_contact_phone VARCHAR(20)
 );
 
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS full_name VARCHAR(100);
 ALTER TABLE patients ADD COLUMN IF NOT EXISTS blood_type VARCHAR(10);
 ALTER TABLE patients ADD COLUMN IF NOT EXISTS allergies TEXT;
 ALTER TABLE patients ADD COLUMN IF NOT EXISTS chronic_conditions TEXT;

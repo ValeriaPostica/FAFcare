@@ -16,7 +16,8 @@ export async function booklet(req, res, next) {
     const patientId = req.params.patientId;
     const [patientResult, recordsResult, prescriptionsResult] = await Promise.all([
       query(`
-        SELECT p.id, p.birth_date, p.gender, p.address, p.insurance_type,
+         SELECT p.id, COALESCE(p.full_name, u.full_name) AS full_name,
+           p.birth_date, p.gender, p.address, p.insurance_type,
                p.blood_type, p.allergies, p.chronic_conditions,
                p.emergency_contact_name, p.emergency_contact_phone,
                u.full_name, u.email, u.phone
