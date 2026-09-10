@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS medical_records (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_id UUID REFERENCES patients(id),
     diagnosis TEXT NOT NULL,
+    diagnosis_type VARCHAR(20) DEFAULT 'other' CHECK (diagnosis_type IN ('chronic', 'acute', 'other')),
     notes TEXT,
     recommendations TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -99,6 +100,9 @@ CREATE TABLE IF NOT EXISTS medical_records (
 ALTER TABLE medical_records ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT TRUE;
 ALTER TABLE medical_records ADD COLUMN IF NOT EXISTS verified_by_doctor_id UUID REFERENCES doctors(id);
 ALTER TABLE medical_records ADD COLUMN IF NOT EXISTS digital_signature_hash VARCHAR(255);
+ALTER TABLE medical_records ADD COLUMN IF NOT EXISTS diagnosis_type VARCHAR(20) DEFAULT 'other';
+UPDATE medical_records SET diagnosis_type = 'other' WHERE diagnosis_type IS NULL;
+ALTER TABLE medical_records ALTER COLUMN diagnosis_type SET DEFAULT 'other';
 
 CREATE TABLE IF NOT EXISTS prescriptions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

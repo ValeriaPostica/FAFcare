@@ -24,6 +24,7 @@ export default function App() {
   const [bookletSection, setBookletSection] = useState('profile');
   const [illnessSearch, setIllnessSearch] = useState('');
   const [illnessCategory, setIllnessCategory] = useState('all');
+  const [illnessDoctor, setIllnessDoctor] = useState('all');
   const [illnessYear, setIllnessYear] = useState('all');
   const [profileSurveyOpen, setProfileSurveyOpen] = useState(false);
   const [profileSurveyData, setProfileSurveyData] = useState({
@@ -48,6 +49,7 @@ export default function App() {
   const [selectedAppointmentToComplete, setSelectedAppointmentToComplete] = useState(null);
   const [completionFormData, setCompletionFormData] = useState({
     diagnosis: '',
+    diagnosisType: 'other',
     prescription: '',
     notes: '',
   });
@@ -205,6 +207,7 @@ export default function App() {
           patient_id: selectedAppointmentToComplete.patient_id,
           doctor_id: currentUser.doctor_id,
           diagnosis: completionFormData.diagnosis,
+          diagnosis_type: completionFormData.diagnosisType,
           notes: completionFormData.notes,
         }),
       });
@@ -244,7 +247,7 @@ export default function App() {
 
     setIsCompleteModalOpen(false);
     setSelectedAppointmentToComplete(null);
-    setCompletionFormData({ diagnosis: '', prescription: '', notes: '' });
+    setCompletionFormData({ diagnosis: '', diagnosisType: 'other', prescription: '', notes: '' });
     setNotification('Consultation marked as completed and added to Medical History!');
     setTimeout(() => setNotification(null), 4000);
   };
@@ -257,6 +260,7 @@ export default function App() {
   const bookletPatient = booklet?.patient || {};
   const formatDate = (value) => value ? new Date(value).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : 'Not recorded';
   const getIllnessCategory = (record) => {
+    if (record.diagnosis_type) return String(record.diagnosis_type).toLowerCase();
     if (record.category) return String(record.category).toLowerCase();
     const text = `${record.diagnosis || ''} ${record.notes || ''} ${record.recommendations || ''}`.toLowerCase();
     if (/chronic|hypertension|diabetes|asthma|arthritis|migraine/.test(text)) return 'chronic';
@@ -267,10 +271,12 @@ export default function App() {
     const searchText = `${record.diagnosis || ''} ${record.notes || ''} ${record.recommendations || ''} ${record.verified_by_doctor || ''}`.toLowerCase();
     const matchesSearch = searchText.includes(illnessSearch.trim().toLowerCase());
     const matchesCategory = illnessCategory === 'all' || getIllnessCategory(record) === illnessCategory;
+    const matchesDoctor = illnessDoctor === 'all' || record.doctor_specialty === illnessDoctor;
     const matchesYear = illnessYear === 'all' || String(new Date(record.created_at).getFullYear()) === illnessYear;
-    return matchesSearch && matchesCategory && matchesYear;
+    return matchesSearch && matchesCategory && matchesDoctor && matchesYear;
   });
   const illnessYears = [...new Set(bookletRecords.map((record) => new Date(record.created_at).getFullYear()).filter(Boolean))].sort((first, second) => second - first);
+  const illnessDoctorSpecialties = [...new Set(bookletRecords.map((record) => record.doctor_specialty).filter(Boolean))].sort();
   const openMedicalBookletPdf = async (showPreview = true) => {
     const latestBooklet = currentUser?.patient_id
       ? await api(`/patient/booklet/${currentUser.patient_id}`).catch(() => booklet)
@@ -556,6 +562,15 @@ export default function App() {
                     placeholder="e.g. Mild Hypertension, Acute Sinusitis"
                     className="w-full p-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Diagnosis type</label>
+                  <select value={completionFormData.diagnosisType} onChange={(e) => setCompletionFormData({ ...completionFormData, diagnosisType: e.target.value })} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500">
+                    <option value="chronic">Chronic</option>
+                    <option value="acute">Acute</option>
+                    <option value="other">Other</option>
+                  </select>
                 </div>
 
                 <div>
@@ -881,6 +896,7 @@ export default function App() {
                         <div className="flex flex-col gap-3 lg:flex-row">
                           <label className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={illnessSearch} onChange={(event) => setIllnessSearch(event.target.value)} placeholder="Search diagnoses, doctors or notes..." className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100" /></label>
                           <select value={illnessYear} onChange={(event) => setIllnessYear(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"><option value="all">All years</option>{illnessYears.map((year) => <option key={year} value={year}>{year}</option>)}</select>
+                          <select value={illnessDoctor} onChange={(event) => setIllnessDoctor(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"><option value="all">All specialties</option>{illnessDoctorSpecialties.map((specialty) => <option key={specialty} value={specialty}>{specialty}</option>)}</select>
                         </div>
                         <div className="mt-3 flex flex-wrap items-center gap-2"><span className="mr-1 text-xs font-semibold text-slate-500">Category:</span>{[{ id: 'all', label: 'All' }, { id: 'chronic', label: 'Chronic' }, { id: 'acute', label: 'Acute' }].map((category) => <button key={category.id} onClick={() => setIllnessCategory(category.id)} className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${illnessCategory === category.id ? 'bg-teal-700 text-white' : 'bg-white text-slate-600 hover:bg-teal-50'}`}>{category.label}</button>)}<span className="ml-auto text-xs font-semibold text-slate-400">Showing {filteredIllnessRecords.length} of {bookletRecords.length}</span></div>
                       </div>
@@ -894,8 +910,8 @@ export default function App() {
                             <article key={record.id} className="relative pl-10">
                               <span className="absolute left-2 top-5 h-3 w-3 rounded-full border-2 border-white bg-teal-600 shadow-sm" />
                               <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                                <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold text-teal-700">{formatDate(record.created_at)}</p><h4 className="mt-1 font-bold text-slate-900">{record.diagnosis}</h4></div><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Verified</span></div>
-                                {record.verified_by_doctor && <p className="mt-2 text-xs text-slate-500">Doctor: {record.verified_by_doctor}</p>}
+                                <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold text-teal-700">{formatDate(record.created_at)}</p><h4 className="mt-1 font-bold text-slate-900">{record.diagnosis}</h4></div><div className="flex gap-2"><span className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold capitalize text-teal-700">{record.diagnosis_type || getIllnessCategory(record)}</span><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Verified</span></div></div>
+                                {(record.verified_by_doctor || record.doctor_specialty) && <p className="mt-2 text-xs text-slate-500">Doctor: {record.verified_by_doctor || 'Not recorded'}{record.doctor_specialty ? ` • ${record.doctor_specialty}` : ''}</p>}
                                 {record.notes && <p className="mt-3 text-sm text-slate-600"><span className="font-semibold text-slate-700">Notes:</span> {record.notes}</p>}
                                 {record.recommendations && <p className="mt-2 text-sm text-slate-600"><span className="font-semibold text-slate-700">Recommendations:</span> {record.recommendations}</p>}
                                 {record.id === bookletRecords[0]?.id && <button onClick={() => { setActiveTab('appointments'); setIsBookingOpen(true); }} className="mt-4 rounded-lg bg-teal-700 px-3 py-2 text-xs font-bold text-white transition hover:bg-teal-800">Book a follow-up appointment</button>}

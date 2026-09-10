@@ -3,9 +3,14 @@ import { query } from '../config/db.js';
 export async function records(req, res, next) {
   try {
     const { rows } = await query(`
-      SELECT id, patient_id, diagnosis, notes, recommendations, created_at,
-             is_verified, verified_by_doctor_id, digital_signature_hash
-      FROM medical_records WHERE patient_id = $1 ORDER BY created_at DESC
+            SELECT mr.id, mr.patient_id, mr.diagnosis, mr.diagnosis_type, mr.notes, mr.recommendations, mr.created_at,
+              mr.is_verified, mr.verified_by_doctor_id, mr.digital_signature_hash,
+              u.full_name AS verified_by_doctor, s.name AS doctor_specialty
+            FROM medical_records mr
+            LEFT JOIN doctors d ON d.id = mr.verified_by_doctor_id
+            LEFT JOIN users u ON u.id = d.user_id
+            LEFT JOIN specialties s ON s.id = d.specialty_id
+            WHERE mr.patient_id = $1 ORDER BY mr.created_at DESC
     `, [req.params.patientId]);
     res.json(rows);
   } catch (error) { next(error); }
@@ -26,12 +31,14 @@ export async function booklet(req, res, next) {
         WHERE p.id = $1
       `, [patientId]),
       query(`
-        SELECT mr.id, mr.diagnosis, mr.notes, mr.recommendations, mr.created_at,
+         SELECT mr.id, mr.diagnosis, mr.diagnosis_type, mr.notes, mr.recommendations, mr.created_at,
                mr.is_verified, mr.digital_signature_hash,
-               u.full_name AS verified_by_doctor
+               u.full_name AS verified_by_doctor,
+           s.name AS doctor_specialty
         FROM medical_records mr
         LEFT JOIN doctors d ON d.id = mr.verified_by_doctor_id
         LEFT JOIN users u ON u.id = d.user_id
+         LEFT JOIN specialties s ON s.id = d.specialty_id
         WHERE mr.patient_id = $1 AND mr.is_verified = TRUE
         ORDER BY mr.created_at DESC
       `, [patientId]),
@@ -76,18 +83,18 @@ export async function createPrescription(req, res, next) {
 
 export async function createMedicalRecord(req, res, next) {
   try {
-    const { patient_id, doctor_id, diagnosis, notes, recommendations } = req.body;
+    const { patient_id, doctor_id, diagnosis, diagnosis_type, notes, recommendations } = req.body;
     if (!patient_id || !diagnosis) {
       return res.status(400).json({ error: 'patient_id and diagnosis are required' });
     }
 
     const { rows } = await query(`
       INSERT INTO medical_records
-        (patient_id, diagnosis, notes, recommendations, is_verified, verified_by_doctor_id)
-      VALUES ($1, $2, $3, $4, TRUE, $5)
-      RETURNING id, patient_id, diagnosis, notes, recommendations, created_at,
+        (patient_id, diagnosis, diagnosis_type, notes, recommendations, is_verified, verified_by_doctor_id)
+      VALUES ($1, $2, COALESCE($3, 'other'), $4, $5, TRUE, $6)
+      RETURNING id, patient_id, diagnosis, diagnosis_type, notes, recommendations, created_at,
                 is_verified, verified_by_doctor_id
-    `, [patient_id, diagnosis, notes || null, recommendations || null, doctor_id || null]);
+    `, [patient_id, diagnosis, diagnosis_type || 'other', notes || null, recommendations || null, doctor_id || null]);
     res.status(201).json(rows[0]);
   } catch (error) { next(error); }
 }
