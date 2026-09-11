@@ -7,7 +7,7 @@ import { createAppointment, listAppointments } from './src/controllers/appointme
 import { booklet, createMedicalRecord, createPrescription, records } from './src/controllers/medicalController.js';
 
 const app = express();
-const PORT = 5000;
+const PORT = Number(process.env.PORT) || 5000;
 
 app.use(cors());
 app.use(express.json());
