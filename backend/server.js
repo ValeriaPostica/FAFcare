@@ -14,7 +14,7 @@ import { booklet, createMedicalRecord, createPrescription, records } from './src
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = Number(process.env.PORT) || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key-change-in-production';
 
 // ==========================================
