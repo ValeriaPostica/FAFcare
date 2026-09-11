@@ -15,6 +15,31 @@ Install the following on your laptop:
 - PostgreSQL: https://www.postgresql.org/download/windows/
 - optionally, pgAdmin 4, which is usually installed with PostgreSQL.
 
+### Docker option
+
+Docker Desktop can run the complete application without installing Node.js or PostgreSQL locally. From the project root, run:
+
+```powershell
+docker compose up --build -d
+```
+
+Open the application at [http://localhost:5174](http://localhost:5174). Docker starts PostgreSQL, creates the schema, imports the CSV demo data, and serves the frontend through Nginx. The API is available to the frontend at `/api` and remains private inside the Docker network.
+
+Useful Docker commands:
+
+```powershell
+# follow application logs
+docker compose logs -f
+
+# stop the containers but keep database data
+docker compose down
+
+# stop containers and delete the PostgreSQL volume, causing a fresh database next time
+docker compose down -v
+```
+
+The default Docker credentials are `postgres` / `postgres`, and seeded demo accounts use `Password123!`. For local development, set `POSTGRES_PASSWORD` and `SEED_PASSWORD` in a root `.env` file before starting Compose.
+
 During PostgreSQL installation, remember the password you choose for the `postgres` user and keep the default port:
 
 ```text
