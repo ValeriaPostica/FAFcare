@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
+import nodemailer from 'nodemailer';
 import { query, pool } from '../config/db.js';
 import { getJwtSecret } from '../config/security.js';
 
@@ -8,6 +9,12 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '2h';
 const MFA_TTL_MS = 5 * 60 * 1000;
 const MFA_MAX_ATTEMPTS = 5;
 const mfaChallenges = new Map();
+const mailTransport = process.env.SMTP_HOST ? nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT || 587),
+  secure: process.env.SMTP_SECURE === 'true',
+  auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } : undefined,
+}) : null;
 
 // Helper: Formats user objects securely (excluding password hashes)
 const publicUser = (row) => ({
@@ -53,14 +60,26 @@ const createMfaChallenge = async (user) => {
     attempts: 0,
   });
 
-  if (process.env.NODE_ENV !== 'production') {
+  if (mailTransport) {
+    try {
+      await mailTransport.sendMail({
+        from: process.env.SMTP_FROM || process.env.SMTP_USER,
+        to: user.email,
+        subject: 'FAFCare verification code',
+        text: `Your FAFCare verification code is ${otpCode}. It expires in 5 minutes.`,
+      });
+    } catch (error) {
+      mfaChallenges.delete(mfaToken);
+      throw new Error('Verification email could not be sent');
+    }
+  } else if (process.env.NODE_ENV !== 'production') {
     console.info(`[MFA development OTP] ${user.email}: ${otpCode}`);
   }
 
   return {
     mfaToken,
     expiresIn: MFA_TTL_MS / 1000,
-    ...(process.env.MFA_RETURN_OTP === 'true' ? { otpCode } : {}),
+    ...(!mailTransport && process.env.MFA_RETURN_OTP === 'true' ? { otpCode } : {}),
   };
 };
 
@@ -263,6 +282,27 @@ export async function verifyMfa(req, res, next) {
       message: 'Authentication successful',
       token: generateToken(challenge.user),
       user: challenge.user,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// POST /api/auth/resend-mfa
+export async function resendMfa(req, res, next) {
+  try {
+    const { mfaToken } = req.body;
+    cleanupMfaChallenges();
+    const challenge = mfaChallenges.get(mfaToken);
+
+    if (!challenge) {
+      return res.status(401).json({ error: 'MFA challenge expired or invalid' });
+    }
+
+    mfaChallenges.delete(mfaToken);
+    res.json({
+      message: 'A new MFA code was generated.',
+      ...await createMfaChallenge(challenge.user),
     });
   } catch (error) {
     next(error);

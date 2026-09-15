@@ -209,6 +209,20 @@ export default function App() {
     } catch (error) { setNotification(error.message); }
   };
 
+  const handleResendMfa = async () => {
+    try {
+      const response = await api('/auth/resend-mfa', {
+        method: 'POST',
+        body: JSON.stringify({ mfaToken }),
+      });
+      setMfaToken(response.mfaToken);
+      setOtpCode('');
+      setNotification(response.otpCode
+        ? `Development OTP: ${response.otpCode}`
+        : 'A new verification code was generated.');
+    } catch (error) { setNotification(error.message); }
+  };
+
   // Finish booking
   const handleConfirmBooking = async () => {
     const slot = await api(`/doctors/${selectedDoctor.id}/schedules`);
@@ -392,6 +406,7 @@ export default function App() {
                   <input type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength="6" required autoFocus value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" className="w-full px-3 py-2 border rounded-lg text-sm tracking-[0.35em] text-center focus:ring-2 focus:ring-emerald-500 outline-none" />
                 </div>
                 <button type="submit" className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg text-sm transition">Verify and continue</button>
+                <button type="button" onClick={handleResendMfa} className="w-full text-sm text-emerald-600 hover:underline">I didn't get the code</button>
               </form>
             ) : (authView === 'login' || authView === 'register') && (
               <form onSubmit={handleSubmitAuth} className="space-y-4">

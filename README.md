@@ -192,10 +192,20 @@ JWT_SECRET=replace-with-a-long-random-secret
 JWT_EXPIRES_IN=2h
 CLIENT_URL=http://localhost:5174
 MFA_RETURN_OTP=false
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASSWORD=
+SMTP_FROM=
 PGSSLMODE=disable
 ```
 
 If your password contains URL characters such as `@`, `:`, `/`, or `#`, URL-encode them in `DATABASE_URL`. For example, `pa@ss` becomes `pa%40ss`. Do not commit `.env` to Git.
+
+For real MFA email delivery, configure the SMTP variables. With `SMTP_HOST` set, the OTP is sent to
+the user's email and is not returned by the API or shown in the UI. Without SMTP, set
+`MFA_RETURN_OTP=true` only for a local demo notification; keep it `false` in production.
 
 ## 5. Import the CSV data
 
