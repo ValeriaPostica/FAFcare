@@ -7,38 +7,112 @@ FAFCare is an application with:
 - a PostgreSQL database;
 - authentication for patients, doctors, and administrators.
 
-## 1. Requirements
+## 1. Setup
+### Docker setup
 
-Install the following on your laptop:
-
-- Node.js LTS: https://nodejs.org/
-- PostgreSQL: https://www.postgresql.org/download/windows/
-- optionally, pgAdmin 4, which is usually installed with PostgreSQL.
-
-### Docker option
-
-Docker Desktop can run the complete application without installing Node.js or PostgreSQL locally. From the project root, run:
+Install and start [Docker Desktop](https://www.docker.com/products/docker-desktop/), then open PowerShell in the project root, the folder containing `docker-compose.yml`:
 
 ```powershell
 docker compose up --build -d
 ```
 
-Open the application at [http://localhost:5174](http://localhost:5174). Docker starts PostgreSQL, creates the schema, imports the CSV demo data, and serves the frontend through Nginx. The API is available to the frontend at `/api` and remains private inside the Docker network.
+Open [http://localhost:5174](http://localhost:5174).
 
-Useful Docker commands:
+The application uses this internal flow:
 
-```powershell
-# follow application logs
-docker compose logs -f
-
-# stop the containers but keep database data
-docker compose down
-
-# stop containers and delete the PostgreSQL volume, causing a fresh database next time
-docker compose down -v
+```text
+browser -> frontend/Nginx -> backend/Express -> PostgreSQL
 ```
 
-The default Docker credentials are `postgres` / `postgres`, and seeded demo accounts use `Password123!`. For local development, set `POSTGRES_PASSWORD` and `SEED_PASSWORD` in a root `.env` file before starting Compose.
+The frontend is available at port `5174`. The backend is not exposed directly to the host; Nginx forwards `/api` requests to it inside Docker. PostgreSQL is exposed on port `5432` for optional database tools.
+
+#### Daily Docker workflow
+
+You do not need to stop and start the containers every time. If Docker Desktop and the containers are still running, open [http://localhost:5174](http://localhost:5174). After restarting the computer or Docker Desktop, run:
+
+```powershell
+docker compose up -d
+```
+
+Use `--build` after changing a Dockerfile, `docker-compose.yml`, dependencies, Vite configuration, or source code included in the production image:
+
+```powershell
+docker compose up --build -d
+```
+
+#### Docker commands
+
+```powershell
+# check container status
+docker compose ps
+
+# follow logs from all services
+docker compose logs -f
+
+# follow only backend logs
+docker compose logs -f backend
+
+# stop containers and keep the database volume
+docker compose down
+
+# start existing containers again
+docker compose up -d
+
+# stop containers and delete the database volume
+# use this only when you want a completely fresh database
+docker compose down -v
+docker compose up --build -d
+```
+
+`docker compose down` does not delete the PostgreSQL data. `docker compose down -v` deletes the local database volume, so the schema and demo data are recreated on the next startup.
+
+Default Docker database credentials are:
+
+```text
+Database: fafcare
+User: postgres
+Password: postgres
+PostgreSQL port: 5432
+Frontend URL: http://localhost:5174
+```
+
+Seeded demo accounts use the password `Password123!`. The Compose defaults are suitable for local development only. Do not use them in production. To override them, create a root `.env` file next to `docker-compose.yml`:
+
+```env
+POSTGRES_PASSWORD=your-local-password
+SEED_PASSWORD=your-demo-password
+JWT_SECRET=replace-with-a-long-random-secret
+CLIENT_URL=http://localhost:5174
+```
+
+`JWT_SECRET` is mandatory for Docker startup and must be long, random, and private. Do not commit `.env` to Git.
+
+#### Docker troubleshooting
+
+If a port is already in use, change the host side of the mapping in `docker-compose.yml`. For example, change `5174:80` to `5175:80`, then open `http://localhost:5175`.
+
+If the frontend or API does not respond, inspect the logs:
+
+```powershell
+docker compose ps
+docker compose logs --tail=100 backend
+docker compose logs --tail=100 frontend
+```
+
+If the database was created incorrectly or you need to reimport all demo data, recreate the volume:
+
+```powershell
+docker compose down -v
+docker compose up --build -d
+```
+
+During PostgreSQL installation, remember the password you choose for the `postgres` user and keep the default port:
+
+```text
+5432
+```
+
+You do not need `psql` in your PATH if you use pgAdmin.
 
 During PostgreSQL installation, remember the password you choose for the `postgres` user and keep the default port:
 

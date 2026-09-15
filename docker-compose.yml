@@ -29,6 +29,8 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
       PGSSLMODE: disable
       SEED_PASSWORD: ${SEED_PASSWORD:-Password123!}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in the root .env file}
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:5174}
     depends_on:
       db:
         condition: service_healthy

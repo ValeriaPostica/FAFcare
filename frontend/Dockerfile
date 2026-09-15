@@ -2,9 +2,11 @@ FROM node:22-alpine AS build
 
 WORKDIR /app
 ENV NODE_ENV=development
+ENV NPM_CONFIG_OMIT=
+RUN npm config delete production || true
 
 COPY package*.json ./
-RUN npm ci --include=dev --production=false
+RUN npm ci --include=dev && test -x node_modules/.bin/vite
 
 COPY . .
 ARG VITE_API_URL=/api

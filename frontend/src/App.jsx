@@ -70,8 +70,13 @@ export default function App() {
   };
 
   const api = async (path, options = {}) => {
+    const token = localStorage.getItem('accessToken');
     const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}${path}`, {
-      headers: { 'Content-Type': 'application/json', ...options.headers }, ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+      }, ...options,
     });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || 'Request failed');
@@ -149,14 +154,16 @@ export default function App() {
           alert('Passwords do not match!');
           return;
         }
-        const user = await api('/auth/register', { method: 'POST', body: JSON.stringify(formData) });
-        setCurrentUser({ ...user, avatarColor: 'bg-emerald-600' });
+        const authResponse = await api('/auth/register', { method: 'POST', body: JSON.stringify(formData) });
+        localStorage.setItem('accessToken', authResponse.token);
+        setCurrentUser({ ...authResponse.user, avatarColor: 'bg-emerald-600' });
         setProfileSurveyData({ ...profileSurveyData, fullName: formData.fullName });
         setProfileSurveyOpen(true);
         setFormData({ fullName: '', email: '', phone: '', password: '', confirmPassword: '' });
       } else {
-        const user = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email: formData.email, password: formData.password }) });
-        setCurrentUser({ ...user, avatarColor: 'bg-emerald-600' });
+        const authResponse = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email: formData.email, password: formData.password }) });
+        localStorage.setItem('accessToken', authResponse.token);
+        setCurrentUser({ ...authResponse.user, avatarColor: 'bg-emerald-600' });
         setActiveTab('overview');
       }
     } catch (error) { setNotification(error.message); }
@@ -428,7 +435,7 @@ export default function App() {
               <div className="p-2 bg-slate-800 rounded-xl text-white"><ShieldCheck className="w-6 h-6" /></div>
               <div><span className="font-bold text-lg text-slate-900">FAFCare Administration</span><span className="text-xs bg-slate-100 text-slate-700 font-semibold px-2 py-0.5 rounded ml-2">Admin</span></div>
             </div>
-            <button onClick={() => setCurrentUser(null)} className="p-2 text-slate-600 hover:text-red-600 rounded-lg hover:bg-slate-100"><LogOut className="w-5 h-5" /></button>
+            <button onClick={() => { localStorage.removeItem('accessToken'); setCurrentUser(null); }} className="p-2 text-slate-600 hover:text-red-600 rounded-lg hover:bg-slate-100"><LogOut className="w-5 h-5" /></button>
           </div>
         </header>
         <main className="max-w-7xl mx-auto px-4 py-8 w-full flex-1 space-y-6">
@@ -464,7 +471,7 @@ export default function App() {
                 <p className="text-sm font-bold text-slate-800">{currentUser.fullName}</p>
                 <p className="text-xs text-slate-500">{currentUser.specialty}</p>
               </div>
-              <button onClick={() => setCurrentUser(null)} className="p-2 text-slate-600 hover:text-red-600 rounded-lg hover:bg-slate-100 transition">
+              <button onClick={() => { localStorage.removeItem('accessToken'); setCurrentUser(null); }} className="p-2 text-slate-600 hover:text-red-600 rounded-lg hover:bg-slate-100 transition">
                 <LogOut className="w-5 h-5" />
               </button>
             </div>
@@ -647,7 +654,7 @@ export default function App() {
               </div>
             </div>
 
-            <button onClick={() => setCurrentUser(null)} className="flex items-center gap-2 text-sm text-slate-600 hover:text-red-600 font-medium px-3 py-2 rounded-lg hover:bg-slate-50 transition">
+            <button onClick={() => { localStorage.removeItem('accessToken'); setCurrentUser(null); }} className="flex items-center gap-2 text-sm text-slate-600 hover:text-red-600 font-medium px-3 py-2 rounded-lg hover:bg-slate-50 transition">
               <LogOut className="w-4 h-4" /> <span className="hidden sm:inline">Log out</span>
             </button>
           </div>

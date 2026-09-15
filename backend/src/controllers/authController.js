@@ -1,8 +1,8 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { query, pool } from '../config/db.js';
+import { getJwtSecret } from '../config/security.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '2h';
 
 // Helper: Formats user objects securely (excluding password hashes)
@@ -26,7 +26,7 @@ const generateToken = (user) => {
       doctorId: user.doctor_id || null,
       role: (user.role || 'patient').toLowerCase()
     },
-    JWT_SECRET,
+    getJwtSecret(),
     { expiresIn: JWT_EXPIRES_IN }
   );
 };
@@ -56,7 +56,7 @@ export async function login(req, res, next) {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
+    if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
@@ -97,12 +97,20 @@ export async function register(req, res, next) {
   try {
     const { fullName, email, phone, password } = req.body;
 
-    // 1. Basic Input Validation
-    if (!fullName || !email || !password) {
+    if (typeof fullName !== 'string' || typeof email !== 'string' || typeof password !== 'string' ||
+        !fullName.trim() || !email.trim() || !password) {
       return res.status(400).json({ error: 'Full name, email, and password are required' });
     }
 
-    if (password.length < 8) {
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      return res.status(400).json({ error: 'A valid email address is required' });
+    }
+
+    if (fullName.trim().length > 100 || email.trim().length > 255) {
+      return res.status(400).json({ error: 'Full name or email is too long' });
+    }
+
+    if (password.length < 8 || password.length > 128) {
       return res.status(400).json({ error: 'Password must be at least 8 characters long' });
     }
 

@@ -1,4 +1,4 @@
-import { query } from '../config/db.js';
+import { pool, query } from '../config/db.js';
 
 const appointmentSelect = `
   SELECT a.id, a.patient_id, a.doctor_id, a.schedule_slot_id, a.appointment_type,
@@ -14,20 +14,101 @@ const appointmentSelect = `
 
 export async function listAppointments(req, res, next) {
   try {
-    const filter = req.query.patient_id ? ' WHERE a.patient_id = $1' : req.query.doctor_id ? ' WHERE a.doctor_id = $1' : '';
-    const { rows } = await query(`${appointmentSelect}${filter} ORDER BY a.scheduled_at`, filter ? [req.query.patient_id || req.query.doctor_id] : []);
+    const role = req.user.role.toLowerCase();
+    let filter = '';
+    let params = [];
+
+    if (role === 'patient') {
+      filter = ' WHERE a.patient_id = $1';
+      params = [req.user.patientId];
+    } else if (role === 'doctor') {
+      filter = ' WHERE a.doctor_id = $1';
+      params = [req.user.doctorId];
+    } else if (role === 'admin') {
+      const filters = req.validatedQuery || {};
+      filter = filters.patient_id ? ' WHERE a.patient_id = $1' : filters.doctor_id ? ' WHERE a.doctor_id = $1' : '';
+      params = filter ? [filters.patient_id || filters.doctor_id] : [];
+    }
+
+    const { rows } = await query(`${appointmentSelect}${filter} ORDER BY a.scheduled_at`, params);
     res.json(rows);
   } catch (error) { next(error); }
 }
 
 export async function createAppointment(req, res, next) {
+  const client = await pool.connect();
   try {
     const { patient_id, doctor_id, schedule_slot_id, appointment_type = 'offline', scheduled_at, price } = req.body;
-    const { rows } = await query(`
+
+    if (!doctor_id || !schedule_slot_id || !scheduled_at) {
+      return res.status(400).json({ error: 'doctor_id, schedule_slot_id and scheduled_at are required' });
+    }
+
+    if (patient_id && patient_id !== req.user.patientId) {
+      return res.status(403).json({ error: 'You can create appointments only for yourself' });
+    }
+
+    await client.query('BEGIN');
+
+    const patientResult = await client.query(
+      'SELECT id FROM patients WHERE id = $1 AND user_id = $2 FOR SHARE',
+      [req.user.patientId, req.user.userId]
+    );
+    if (!patientResult.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Patient profile does not belong to the authenticated user' });
+    }
+
+    const slotResult = await client.query(`
+      SELECT ds.id, ds.doctor_id, ds.date, ds.start_time, ds.is_available,
+             d.price_per_consultation
+      FROM doctor_schedules ds
+      JOIN doctors d ON d.id = ds.doctor_id
+      WHERE ds.id = $1 AND ds.doctor_id = $2
+      FOR UPDATE
+    `, [schedule_slot_id, doctor_id]);
+
+    const slot = slotResult.rows[0];
+    if (!slot) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Schedule slot not found for this doctor' });
+    }
+    if (!slot.is_available) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Schedule slot is already booked' });
+    }
+
+    const matchingTime = await client.query(
+      'SELECT ($1::timestamp = ($2::date + $3::time)) AS matches',
+      [scheduled_at, slot.date, slot.start_time]
+    );
+    if (!matchingTime.rows[0].matches) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'scheduled_at must match the selected schedule slot' });
+    }
+
+    const updatedSlot = await client.query(
+      'UPDATE doctor_schedules SET is_available = FALSE WHERE id = $1 AND is_available = TRUE RETURNING id',
+      [schedule_slot_id]
+    );
+    if (!updatedSlot.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Schedule slot is already booked' });
+    }
+
+    const appointmentResult = await client.query(`
       INSERT INTO appointments (patient_id, doctor_id, schedule_slot_id, appointment_type, scheduled_at, price)
       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
-    `, [patient_id, doctor_id, schedule_slot_id || null, appointment_type, scheduled_at, price || null]);
-    const result = await query(`${appointmentSelect} WHERE a.id = $1`, [rows[0].id]);
+    `, [req.user.patientId, doctor_id, schedule_slot_id, appointment_type, scheduled_at, slot.price_per_consultation]);
+
+    await client.query('COMMIT');
+
+    const result = await query(`${appointmentSelect} WHERE a.id = $1`, [appointmentResult.rows[0].id]);
     res.status(201).json(result.rows[0]);
-  } catch (error) { next(error); }
+  } catch (error) {
+    await client.query('ROLLBACK');
+    next(error);
+  } finally {
+    client.release();
+  }
 }
