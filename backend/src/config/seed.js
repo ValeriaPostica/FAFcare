@@ -10,7 +10,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 const dataDir = path.join(root, 'data');
 const defaultPassword = process.env.SEED_PASSWORD || 'Password123!';
 
-const patientPassword = (patientId) => `${defaultPassword}-${patientId}-Patient!`;
+const patientPassword = (patientId) => `${defaultPassword}-Patient-${patientId}!`;
+const doctorPassword = (doctorId) => `${defaultPassword}-Doctor-${doctorId}!`;
+const adminPassword = () => `${defaultPassword}-Admin!`;
 
 function uuidFor(type, value) {
   const hex = crypto.createHash('sha1').update(`${type}:${value}`).digest('hex').slice(0, 32).split('');
@@ -55,7 +57,6 @@ function demoMedicalProfile(row) {
 
 async function seed() {
   const client = await pool.connect();
-  const staffPasswordHash = await bcrypt.hash(defaultPassword, 12);
   try {
     await client.query('BEGIN');
     await client.query('ALTER TABLE patients ADD COLUMN IF NOT EXISTS full_name VARCHAR(100)');
@@ -97,25 +98,29 @@ async function seed() {
     }
 
     const doctorRows = await csvRows('doctors.csv');
-    for (const row of doctorRows) {
-      const userId = uuidFor('user', valueOr(row.user_id, `doctor-${row.id}`));
-      const doctorId = uuidFor('doctor', row.id);
+    for (const [doctorIndex, row] of doctorRows.entries()) {
+      const doctorNumber = Number.parseInt(String(row.id), 10) || doctorIndex + 1;
+      const userId = uuidFor('user', valueOr(row.user_id, `doctor-${doctorNumber}`));
+      const doctorId = uuidFor('doctor', doctorNumber);
+      const passwordHash = await bcrypt.hash(doctorPassword(doctorNumber), 10);
       const price = row.price_per_consultation_mdl || row.price_per_consultation;
       await client.query(`INSERT INTO users (id, email, phone, password_hash, role, full_name)
         VALUES ($1, $2, $3, $4, 'doctor', $5)
-        ON CONFLICT (id) DO UPDATE SET phone = EXCLUDED.phone, full_name = EXCLUDED.full_name`,
-        [userId, `doctor.${row.id}@fafcare.local`, row.phone, staffPasswordHash, row.full_name]);
+        ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, phone = EXCLUDED.phone,
+        password_hash = EXCLUDED.password_hash, full_name = EXCLUDED.full_name`,
+        [userId, `doctor.${doctorNumber}@fafcare.local`, row.phone, passwordHash, row.full_name]);
       await client.query(`INSERT INTO doctors (id, user_id, specialty_id, experience_years, price_per_consultation)
         VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET specialty_id = EXCLUDED.specialty_id,
         experience_years = EXCLUDED.experience_years, price_per_consultation = EXCLUDED.price_per_consultation`,
         [doctorId, userId, integerOr(row.specialty_id, null), integerOr(row.experience_years), price]);
     }
 
+    const adminPasswordHash = await bcrypt.hash(adminPassword(), 10);
     await client.query(`INSERT INTO users (id, email, phone, password_hash, role, full_name)
       VALUES ($1, 'admin@fafcare.com', NULL, $2, 'admin', 'FAFCare Administrator')
       ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash,
       full_name = EXCLUDED.full_name, role = EXCLUDED.role`,
-      [uuidFor('user', 'admin'), staffPasswordHash]);
+      [uuidFor('user', 'admin'), adminPasswordHash]);
 
     for (const row of await csvRows('doctor_schedules.csv')) {
       await client.query(`INSERT INTO doctor_schedules (id, doctor_id, date, start_time, end_time, is_available)
