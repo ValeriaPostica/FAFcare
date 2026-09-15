@@ -32,6 +32,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in the root .env file}
       CLIENT_URL: ${CLIENT_URL:-http://localhost:5174}
       MFA_RETURN_OTP: ${MFA_RETURN_OTP:-false}
+    ports:
+      - "5000:5000"
     depends_on:
       db:
         condition: service_healthy

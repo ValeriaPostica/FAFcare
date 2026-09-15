@@ -82,7 +82,13 @@ export default function App() {
         ...options.headers,
       }, ...options,
     });
-    const body = await response.json();
+    const responseText = await response.text();
+    let body;
+    try {
+      body = responseText ? JSON.parse(responseText) : {};
+    } catch {
+      throw new Error(`API returned ${response.status} ${response.statusText} instead of JSON`);
+    }
     if (!response.ok) throw new Error(body.error || 'Request failed');
     return body;
   };
