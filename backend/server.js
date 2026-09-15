@@ -14,6 +14,7 @@ import { booklet, createMedicalRecord, createPrescription, records } from './src
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = Number(process.env.PORT) || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key-change-in-production';
 
@@ -65,9 +66,13 @@ export const authenticate = (req, res, next) => {
 };
 
 // Role-Based Access Control Middleware (Authorization / RBAC)
+// Role-Based Access Control Middleware (Authorization / RBAC)
 export const requireRole = (...allowedRoles) => {
   return (req, res, next) => {
-    if (!req.user || !allowedRoles.includes(req.user.role)) {
+    const userRole = (req.user?.role || '').toLowerCase();
+    const normalizedAllowed = allowedRoles.map(r => r.toLowerCase());
+
+    if (!req.user || !normalizedAllowed.includes(userRole)) {
       return res.status(403).json({ error: 'Forbidden: Insufficient permissions' });
     }
     next();

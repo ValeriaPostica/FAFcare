@@ -62,16 +62,23 @@ export default function App() {
   const availableTimeSlots = ['09:00 AM', '10:30 AM', '01:15 PM', '03:00 PM', '04:30 PM'];
 
   const to24Hour = (time) => {
-    const [clock, meridiem] = time.split(' ');
-    let [hours, minutes] = clock.split(':').map(Number);
+    if (!time) return '00:00:00';
+    const [clock, meridiem] = (time || '').split(' ');
+    let [hours, minutes] = (clock || '00:00').split(':').map(Number);
     if (meridiem === 'PM' && hours !== 12) hours += 12;
     if (meridiem === 'AM' && hours === 12) hours = 0;
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
   };
 
   const api = async (path, options = {}) => {
+    const token = localStorage.getItem('token');
     const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}${path}`, {
-      headers: { 'Content-Type': 'application/json', ...options.headers }, ...options,
+      headers: { 
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        ...options.headers 
+      }, 
+      ...options,
     });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || 'Request failed');
@@ -80,25 +87,45 @@ export default function App() {
 
   const loadAppointments = async (user = currentUser) => {
     if (!user) return;
-    const query = user.role === 'Doctor' ? `doctor_id=${user.doctor_id}` : user.role === 'Patient' ? `patient_id=${user.patient_id}` : '';
+    const userRole = (user.role || '').toLowerCase();
+    const query = userRole === 'doctor' ? `doctor_id=${user.doctor_id}` : userRole === 'patient' ? `patient_id=${user.patient_id}` : '';
+    
     const rows = await api(`/appointments?${query}`);
     setAppointments(rows.map((row) => ({ 
       ...row, 
-      patientName: row.patient_name, 
-      date: row.scheduled_at.slice(0, 10), 
-      time: row.scheduled_at.slice(11, 16), 
+      patientName: row.patient_name || row.patientName, 
+      doctor: row.doctor_name || row.doctor,
+      date: row.scheduled_at ? row.scheduled_at.slice(0, 10) : '', 
+      time: row.scheduled_at ? row.scheduled_at.slice(11, 16) : '', 
       location: 'FAFCare clinic',
       status: row.status || 'Scheduled'
     })));
   };
 
   useEffect(() => {
-    Promise.all([api('/specialties'), api('/doctors')])
-      .then(([remoteSpecialties, remoteDoctors]) => {
-        setSpecialties(remoteSpecialties.map((spec) => ({ ...spec, icon: spec.name.toLowerCase().includes('heart') ? Heart : Stethoscope })));
-        setDoctorsList(remoteDoctors.map((doctor) => ({ ...doctor, specId: doctor.spec_id })));
-      })
-      .catch((error) => setNotification(`API unavailable: ${error.message}`));
+    // Загружаем специальности и врачей безопасно
+    const loadCatalog = async () => {
+      try {
+        const [remoteSpecialties, remoteDoctors] = await Promise.all([
+          api('/specialties'),
+          api('/doctors')
+        ]);
+        
+        setSpecialties((remoteSpecialties || []).map((spec) => ({ 
+          ...spec, 
+          icon: spec.name?.toLowerCase().includes('heart') ? Heart : Stethoscope 
+        })));
+        
+        setDoctorsList((remoteDoctors || []).map((doctor) => ({ 
+          ...doctor, 
+          specId: doctor.spec_id 
+        })));
+      } catch (error) {
+        console.error('Catalog load error:', error);
+      }
+    };
+
+    loadCatalog();
   }, []);
 
   useEffect(() => { loadAppointments().catch(() => {}); }, [currentUser]);
@@ -150,13 +177,37 @@ export default function App() {
           return;
         }
         const user = await api('/auth/register', { method: 'POST', body: JSON.stringify(formData) });
-        setCurrentUser({ ...user, avatarColor: 'bg-emerald-600' });
+        
+        const rawRole = user.role || user.role_name || 'Patient';
+        const normalizedRole = rawRole.charAt(0).toUpperCase() + rawRole.slice(1).toLowerCase();
+        
+        setCurrentUser({ 
+          ...user, 
+          role: normalizedRole,
+          fullName: user.fullName || user.full_name || formData.fullName,
+          avatarColor: 'bg-emerald-600' 
+        });
         setProfileSurveyData({ ...profileSurveyData, fullName: formData.fullName });
         setProfileSurveyOpen(true);
         setFormData({ fullName: '', email: '', phone: '', password: '', confirmPassword: '' });
       } else {
-        const user = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email: formData.email, password: formData.password }) });
-        setCurrentUser({ ...user, avatarColor: 'bg-emerald-600' });
+        const response = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email: formData.email, password: formData.password }) });
+        
+        // Сохраняем токен
+        if (response.token) {
+          localStorage.setItem('token', response.token);
+        }
+
+        const userData = response.user || response;
+        const rawRole = userData.role || userData.role_name || 'Patient';
+        const normalizedRole = String(rawRole).toLowerCase();
+
+        setCurrentUser({ 
+          ...userData, 
+          role: normalizedRole,
+          fullName: userData.fullName || userData.full_name || userData.name || 'User',
+          avatarColor: 'bg-emerald-600' 
+        });
         setActiveTab('overview');
       }
     } catch (error) { setNotification(error.message); }
@@ -164,12 +215,25 @@ export default function App() {
 
   // Finish booking
   const handleConfirmBooking = async () => {
-    const slot = await api(`/doctors/${selectedDoctor.id}/schedules`);
-    const selectedSlot = slot.find((item) => item.date.toString().slice(0, 10) === selectedDate) || slot[0];
-    await api('/appointments', { method: 'POST', body: JSON.stringify({
-      patient_id: currentUser.patient_id, doctor_id: selectedDoctor.id, schedule_slot_id: selectedSlot?.id,
-      appointment_type: 'offline', scheduled_at: `${selectedDate}T${to24Hour(selectedTime)}`, price: selectedDoctor.price_per_consultation,
-    }) });
+  try {
+    // 1. Запрашиваем слоты врача
+    const slots = await api(`/doctors/${selectedDoctor.id}/schedules`).catch(() => []);
+    const selectedSlot = slots.find((item) => String(item.date).slice(0, 10) === selectedDate) || slots[0];
+
+    // 2. Формируем безопасный payload (если слота нет, передаем null вместо undefined)
+    await api('/appointments', {
+      method: 'POST',
+      body: JSON.stringify({
+        patient_id: currentUser.patient_id,
+        doctor_id: selectedDoctor.id,
+        schedule_slot_id: selectedSlot?.id || null,
+        appointment_type: 'offline',
+        scheduled_at: `${selectedDate}T${to24Hour(selectedTime)}`,
+        price: selectedDoctor.price_per_consultation || 300,
+      }),
+    });
+
+    // 3. Обновляем список записей и закрываем модальное окно
     await loadAppointments(currentUser);
     setIsBookingOpen(false);
     setBookingStep(1);
@@ -178,7 +242,10 @@ export default function App() {
     setActiveTab('appointments');
     setNotification('Your appointment was booked successfully!');
     setTimeout(() => setNotification(null), 4000);
-  };
+  } catch (error) {
+    setNotification(`Booking failed: ${error.message}`);
+  }
+};
 
   // Complete consultation by Doctor
   const handleSaveConsultationCompletion = async (e) => {
@@ -419,7 +486,7 @@ export default function App() {
   // =========================================================================
   // 2. ADMIN & DOCTOR DASHBOARDS
   // =========================================================================
-  if (currentUser.role === 'Admin') {
+  if (currentUser?.role?.toLowerCase() === 'admin') {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col">
         <header className="bg-white border-b border-slate-200">
@@ -443,7 +510,7 @@ export default function App() {
     );
   }
 
-  if (currentUser.role === 'Doctor') {
+  if (currentUser?.role?.toLowerCase() === 'doctor') {
     const doctorAppointments = appointments.filter((a) => a.doctor === currentUser.fullName);
 
     return (
@@ -499,7 +566,7 @@ export default function App() {
                   <div key={app.id} className="p-5 flex items-center justify-between hover:bg-slate-50 transition">
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 bg-blue-100 text-blue-700 font-bold rounded-full flex items-center justify-center text-sm">
-                        {app.patientName.split(' ').map((n) => n[0]).join('')}
+                        {(app.patientName || 'Patient').split(' ').map((n) => n[0]).join('')}
                       </div>
                       <div>
                         <h4 className="font-bold text-slate-800">{app.patientName}</h4>
@@ -639,7 +706,7 @@ export default function App() {
           <div className="flex items-center gap-4">
             <div className="hidden sm:flex items-center gap-3 pr-4 border-r border-slate-200">
               <div className={`w-9 h-9 ${currentUser.avatarColor} text-white font-bold rounded-full flex items-center justify-center text-sm`}>
-                {currentUser.fullName.split(' ').map((n) => n[0]).join('')}
+                {(currentUser?.fullName || currentUser?.full_name || 'User').split(' ').map((n) => n[0]).join('')}
               </div>
               <div className="text-left">
                 <p className="text-sm font-semibold text-slate-800">{currentUser.fullName}</p>
