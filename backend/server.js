@@ -7,12 +7,13 @@ import dotenv from 'dotenv';
 import { pool } from './src/config/db.js';
 import { listAccounts, loginStep1, register, resendMfa, updatePatientProfile, verifyMfa } from './src/controllers/authController.js';
 import { doctors, schedules, specialties } from './src/controllers/catalogController.js';
-import { createAppointment, listAppointments } from './src/controllers/appointmentController.js';
+import { createAppointment, listAppointments, updateAppointment } from './src/controllers/appointmentController.js';
 import { booklet, createMedicalRecord, createPrescription, records } from './src/controllers/medicalController.js';
 import { authenticate, requirePatientAccess, requireRole } from './src/middleware/auth.js';
 import {
   appointmentQuerySchema,
   appointmentSchema,
+  appointmentUpdateSchema,
   doctorIdParamsSchema,
   loginSchema,
   mfaSchema,
@@ -91,6 +92,7 @@ app.patch('/api/patients/:patientId/profile', authenticate, validateParams(patie
 // Appointment Management Routes
 app.get('/api/appointments', authenticate, requireRole('patient', 'doctor', 'admin'), validateQuery(appointmentQuerySchema), listAppointments);
 app.post('/api/appointments', authenticate, requireRole('patient'), validateBody(appointmentSchema), createAppointment);
+app.patch('/api/appointments/:id', authenticate, requireRole('doctor', 'admin'), validateBody(appointmentUpdateSchema), updateAppointment);
 
 // Medical Record Routes (Restricted to authorized users)
 app.get('/api/patients/:patientId/medical-records', authenticate, validateParams(patientIdParamsSchema), requirePatientAccess((req) => req.params.patientId), records);

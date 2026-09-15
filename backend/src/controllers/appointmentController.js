@@ -112,3 +112,31 @@ export async function createAppointment(req, res, next) {
     client.release();
   }
 }
+
+export async function updateAppointment(req, res, next) {
+  try {
+    const { status } = req.body;
+    const role = req.user.role.toLowerCase();
+    const params = [status, req.params.id];
+    let ownership = '';
+
+    if (role === 'doctor') {
+      params.push(req.user.doctorId);
+      ownership = ' AND a.doctor_id = $3';
+    }
+
+    const result = await query(`
+      UPDATE appointments a
+      SET status = $1
+      WHERE a.id = $2${ownership}
+      RETURNING a.id
+    `, params);
+
+    if (!result.rows[0]) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+
+    const updated = await query(`${appointmentSelect} WHERE a.id = $1`, [req.params.id]);
+    res.json(updated.rows[0]);
+  } catch (error) { next(error); }
+}

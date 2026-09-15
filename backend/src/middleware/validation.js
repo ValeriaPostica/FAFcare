@@ -54,6 +54,13 @@ export const appointmentSchema = z.object({
   scheduled_at: isoDateTime,
 }).strict();
 
+export const appointmentUpdateSchema = z.object({
+  status: z.enum(['pending', 'confirmed', 'cancelled', 'completed', 'no_show']),
+  diagnosis: z.string().trim().max(10000).optional().or(z.literal('')),
+  prescription: z.string().trim().max(10000).optional().or(z.literal('')),
+  notes: z.string().trim().max(10000).optional().or(z.literal('')),
+}).strict();
+
 export const medicalRecordSchema = z.object({
   patient_id: uuid,
   doctor_id: uuid.optional(),

@@ -22,7 +22,15 @@ export default function App() {
   const [authStep, setAuthStep] = useState('credentials'); // 'credentials' | 'mfa'
   const [mfaToken, setMfaToken] = useState('');
   const [pendingAuthUser, setPendingAuthUser] = useState(null);
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const savedUser = localStorage.getItem('currentUser');
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch {
+      localStorage.removeItem('currentUser');
+      return null;
+    }
+  });
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'appointments' | 'history' | 'booklet'
   const [bookletSection, setBookletSection] = useState('profile');
   const [illnessSearch, setIllnessSearch] = useState('');
@@ -89,8 +97,29 @@ export default function App() {
     } catch {
       throw new Error(`API returned ${response.status} ${response.statusText} instead of JSON`);
     }
-    if (!response.ok) throw new Error(body.error || 'Request failed');
+    if (!response.ok) {
+      const serverMessage = body.error || 'Request failed';
+      if (response.status === 401) {
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('currentUser');
+        setCurrentUser(null);
+        throw new Error('Your session has expired. Please sign in again.');
+      }
+      if (response.status === 403) {
+        throw new Error(`Access denied: ${serverMessage}`);
+      }
+      if (response.status === 409) {
+        throw new Error(`Conflict: ${serverMessage}`);
+      }
+      throw new Error(serverMessage);
+    }
     return body;
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('currentUser');
+    setCurrentUser(null);
   };
 
   const loadAppointments = async (user = currentUser) => {
@@ -103,7 +132,7 @@ export default function App() {
       date: row.scheduled_at.slice(0, 10), 
       time: row.scheduled_at.slice(11, 16), 
       location: 'FAFCare clinic',
-      status: row.status || 'Scheduled'
+      status: row.status ? row.status.charAt(0).toUpperCase() + row.status.slice(1).toLowerCase() : 'Scheduled'
     })));
   };
 
@@ -194,7 +223,9 @@ export default function App() {
         body: JSON.stringify({ mfaToken, otpCode }),
       });
       localStorage.setItem('accessToken', authResponse.token);
-      setCurrentUser({ ...authResponse.user, avatarColor: 'bg-emerald-600' });
+      const authenticatedUser = { ...authResponse.user, avatarColor: 'bg-emerald-600' };
+      localStorage.setItem('currentUser', JSON.stringify(authenticatedUser));
+      setCurrentUser(authenticatedUser);
       if (authView === 'register') {
         setProfileSurveyData({ ...profileSurveyData, fullName: authResponse.user.fullName });
         setProfileSurveyOpen(true);
@@ -280,7 +311,7 @@ export default function App() {
       await api(`/appointments/${selectedAppointmentToComplete.id}`, {
         method: 'PATCH',
         body: JSON.stringify({
-          status: 'Completed',
+          status: 'completed',
           diagnosis: completionFormData.diagnosis,
           prescription: completionFormData.prescription,
           notes: completionFormData.notes,
@@ -502,7 +533,7 @@ export default function App() {
               <div className="p-2 bg-slate-800 rounded-xl text-white"><ShieldCheck className="w-6 h-6" /></div>
               <div><span className="font-bold text-lg text-slate-900">FAFCare Administration</span><span className="text-xs bg-slate-100 text-slate-700 font-semibold px-2 py-0.5 rounded ml-2">Admin</span></div>
             </div>
-            <button onClick={() => { localStorage.removeItem('accessToken'); setCurrentUser(null); }} className="p-2 text-slate-600 hover:text-red-600 rounded-lg hover:bg-slate-100"><LogOut className="w-5 h-5" /></button>
+            <button onClick={handleLogout} className="p-2 text-slate-600 hover:text-red-600 rounded-lg hover:bg-slate-100"><LogOut className="w-5 h-5" /></button>
           </div>
         </header>
         <main className="max-w-7xl mx-auto px-4 py-8 w-full flex-1 space-y-6">
@@ -538,7 +569,7 @@ export default function App() {
                 <p className="text-sm font-bold text-slate-800">{currentUser.fullName}</p>
                 <p className="text-xs text-slate-500">{currentUser.specialty}</p>
               </div>
-              <button onClick={() => { localStorage.removeItem('accessToken'); setCurrentUser(null); }} className="p-2 text-slate-600 hover:text-red-600 rounded-lg hover:bg-slate-100 transition">
+              <button onClick={handleLogout} className="p-2 text-slate-600 hover:text-red-600 rounded-lg hover:bg-slate-100 transition">
                 <LogOut className="w-5 h-5" />
               </button>
             </div>
@@ -592,7 +623,7 @@ export default function App() {
                             }}
                             className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs rounded-lg transition flex items-center gap-1 shadow-sm"
                           >
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Completed
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Add diagnosis &amp; prescription
                           </button>
                           <span className="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                             Confirmed
@@ -617,7 +648,7 @@ export default function App() {
             <div className="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-100">
               <div className="p-5 bg-emerald-600 text-white flex justify-between items-center">
                 <div>
-                  <h3 className="font-bold text-lg">Complete Consultation</h3>
+                  <h3 className="font-bold text-lg">Add consultation result</h3>
                   <p className="text-xs text-emerald-100">Patient: {selectedAppointmentToComplete.patientName}</p>
                 </div>
                 <button onClick={() => setIsCompleteModalOpen(false)} className="p-1 hover:bg-white/10 rounded-lg text-white">
@@ -721,7 +752,7 @@ export default function App() {
               </div>
             </div>
 
-            <button onClick={() => { localStorage.removeItem('accessToken'); setCurrentUser(null); }} className="flex items-center gap-2 text-sm text-slate-600 hover:text-red-600 font-medium px-3 py-2 rounded-lg hover:bg-slate-50 transition">
+            <button onClick={handleLogout} className="flex items-center gap-2 text-sm text-slate-600 hover:text-red-600 font-medium px-3 py-2 rounded-lg hover:bg-slate-50 transition">
               <LogOut className="w-4 h-4" /> <span className="hidden sm:inline">Log out</span>
             </button>
           </div>
