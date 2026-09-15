@@ -19,6 +19,9 @@ export default function App() {
 
   // --- AUTH AND NAVIGATION STATE ---
   const [authView, setAuthView] = useState('login'); // 'login' | 'register'
+  const [authStep, setAuthStep] = useState('credentials'); // 'credentials' | 'mfa'
+  const [mfaToken, setMfaToken] = useState('');
+  const [pendingAuthUser, setPendingAuthUser] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'appointments' | 'history' | 'booklet'
   const [bookletSection, setBookletSection] = useState('profile');
@@ -58,6 +61,7 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [notification, setNotification] = useState(null);
   const [formData, setFormData] = useState({ fullName: '', email: '', phone: '', password: '', confirmPassword: '' });
+  const [otpCode, setOtpCode] = useState('');
 
   const availableTimeSlots = ['09:00 AM', '10:30 AM', '01:15 PM', '03:00 PM', '04:30 PM'];
 
@@ -155,17 +159,47 @@ export default function App() {
           return;
         }
         const authResponse = await api('/auth/register', { method: 'POST', body: JSON.stringify(formData) });
-        localStorage.setItem('accessToken', authResponse.token);
-        setCurrentUser({ ...authResponse.user, avatarColor: 'bg-emerald-600' });
-        setProfileSurveyData({ ...profileSurveyData, fullName: formData.fullName });
-        setProfileSurveyOpen(true);
+        setMfaToken(authResponse.mfaToken);
+        setPendingAuthUser(authResponse.user);
+        setAuthStep('mfa');
+        setOtpCode('');
+        setNotification(authResponse.otpCode
+          ? `Development OTP: ${authResponse.otpCode}`
+          : 'Enter the 6-digit verification code to finish signing in.');
         setFormData({ fullName: '', email: '', phone: '', password: '', confirmPassword: '' });
       } else {
-        const authResponse = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email: formData.email, password: formData.password }) });
-        localStorage.setItem('accessToken', authResponse.token);
-        setCurrentUser({ ...authResponse.user, avatarColor: 'bg-emerald-600' });
+        const authResponse = await api('/auth/login-step1', { method: 'POST', body: JSON.stringify({ email: formData.email, password: formData.password }) });
+        setMfaToken(authResponse.mfaToken);
+        setPendingAuthUser(authResponse.user);
+        setAuthStep('mfa');
+        setOtpCode('');
+        setNotification(authResponse.otpCode
+          ? `Development OTP: ${authResponse.otpCode}`
+          : 'Enter the 6-digit verification code to finish signing in.');
+      }
+    } catch (error) { setNotification(error.message); }
+  };
+
+  const handleVerifyMfa = async (e) => {
+    e.preventDefault();
+    try {
+      const authResponse = await api('/auth/verify-mfa', {
+        method: 'POST',
+        body: JSON.stringify({ mfaToken, otpCode }),
+      });
+      localStorage.setItem('accessToken', authResponse.token);
+      setCurrentUser({ ...authResponse.user, avatarColor: 'bg-emerald-600' });
+      if (authView === 'register') {
+        setProfileSurveyData({ ...profileSurveyData, fullName: authResponse.user.fullName });
+        setProfileSurveyOpen(true);
+      } else {
         setActiveTab('overview');
       }
+      setAuthStep('credentials');
+      setMfaToken('');
+      setPendingAuthUser(null);
+      setOtpCode('');
+      setNotification(null);
     } catch (error) { setNotification(error.message); }
   };
 
@@ -321,8 +355,8 @@ export default function App() {
         <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
           
           <div className="bg-emerald-600 p-6 text-white text-center relative">
-            {authView !== 'login' && (
-              <button onClick={() => setAuthView('login')} className="absolute left-4 top-6 p-1 rounded-lg hover:bg-white/10 transition text-white">
+            {(authView !== 'login' || authStep === 'mfa') && (
+              <button onClick={() => { setAuthView('login'); setAuthStep('credentials'); setMfaToken(''); setPendingAuthUser(null); setOtpCode(''); setNotification(null); }} className="absolute left-4 top-6 p-1 rounded-lg hover:bg-white/10 transition text-white">
                 <ArrowLeft className="w-5 h-5" />
               </button>
             )}
@@ -341,7 +375,19 @@ export default function App() {
               </div>
             )}
 
-            {(authView === 'login' || authView === 'register') && (
+            {authStep === 'mfa' ? (
+              <form onSubmit={handleVerifyMfa} className="space-y-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-800">Two-step verification</h2>
+                  <p className="text-sm text-slate-500 mt-1">A verification code was generated for {pendingAuthUser?.email || formData.email}.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">6-digit verification code</label>
+                  <input type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength="6" required autoFocus value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" className="w-full px-3 py-2 border rounded-lg text-sm tracking-[0.35em] text-center focus:ring-2 focus:ring-emerald-500 outline-none" />
+                </div>
+                <button type="submit" className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg text-sm transition">Verify and continue</button>
+              </form>
+            ) : (authView === 'login' || authView === 'register') && (
               <form onSubmit={handleSubmitAuth} className="space-y-4">
                 {authView === 'register' && (
                   <div>

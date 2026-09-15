@@ -1,9 +1,13 @@
 import bcrypt from 'bcrypt';
+import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { query, pool } from '../config/db.js';
 import { getJwtSecret } from '../config/security.js';
 
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '2h';
+const MFA_TTL_MS = 5 * 60 * 1000;
+const MFA_MAX_ATTEMPTS = 5;
+const mfaChallenges = new Map();
 
 // Helper: Formats user objects securely (excluding password hashes)
 const publicUser = (row) => ({
@@ -31,6 +35,35 @@ const generateToken = (user) => {
   );
 };
 
+const cleanupMfaChallenges = () => {
+  const now = Date.now();
+  for (const [token, challenge] of mfaChallenges) {
+    if (challenge.expiresAt <= now) mfaChallenges.delete(token);
+  }
+};
+
+const createMfaChallenge = async (user) => {
+  cleanupMfaChallenges();
+  const otpCode = crypto.randomInt(0, 1000000).toString().padStart(6, '0');
+  const mfaToken = crypto.randomBytes(32).toString('base64url');
+  mfaChallenges.set(mfaToken, {
+    user,
+    otpHash: await bcrypt.hash(otpCode, 10),
+    expiresAt: Date.now() + MFA_TTL_MS,
+    attempts: 0,
+  });
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.info(`[MFA development OTP] ${user.email}: ${otpCode}`);
+  }
+
+  return {
+    mfaToken,
+    expiresIn: MFA_TTL_MS / 1000,
+    ...(process.env.MFA_RETURN_OTP === 'true' ? { otpCode } : {}),
+  };
+};
+
 // GET /api/auth/accounts (Admin/List accounts)
 export async function listAccounts(req, res, next) {
   try {
@@ -51,8 +84,8 @@ export async function listAccounts(req, res, next) {
   }
 }
 
-// POST /api/auth/login
-export async function login(req, res, next) {
+// POST /api/auth/login-step1
+export async function loginStep1(req, res, next) {
   try {
     const { email, password } = req.body;
 
@@ -79,11 +112,11 @@ export async function login(req, res, next) {
     }
 
     const userData = publicUser(user);
-    const token = generateToken(user);
+    const challenge = await createMfaChallenge(userData);
 
     res.json({
-      message: 'Authentication successful',
-      token,
+      message: 'Credentials accepted. MFA verification required.',
+      ...challenge,
       user: userData
     });
   } catch (error) { 
@@ -143,11 +176,11 @@ export async function register(req, res, next) {
     };
 
     const userData = publicUser(combinedUserData);
-    const token = generateToken(combinedUserData);
+    const challenge = await createMfaChallenge(userData);
 
     res.status(201).json({
-      message: 'User registered successfully',
-      token,
+      message: 'User registered. MFA verification required.',
+      ...challenge,
       user: userData
     });
 
@@ -203,5 +236,35 @@ export async function updatePatientProfile(req, res, next) {
     next(error);
   } finally { 
     client.release(); 
+  }
+}
+
+// POST /api/auth/verify-mfa
+export async function verifyMfa(req, res, next) {
+  try {
+    const { mfaToken, otpCode } = req.body;
+    cleanupMfaChallenges();
+    const challenge = mfaChallenges.get(mfaToken);
+
+    if (!challenge || challenge.expiresAt <= Date.now()) {
+      mfaChallenges.delete(mfaToken);
+      return res.status(401).json({ error: 'MFA challenge expired or invalid' });
+    }
+
+    challenge.attempts += 1;
+    const validOtp = await bcrypt.compare(otpCode, challenge.otpHash);
+    if (!validOtp) {
+      if (challenge.attempts >= MFA_MAX_ATTEMPTS) mfaChallenges.delete(mfaToken);
+      return res.status(401).json({ error: 'Invalid MFA code' });
+    }
+
+    mfaChallenges.delete(mfaToken);
+    res.json({
+      message: 'Authentication successful',
+      token: generateToken(challenge.user),
+      user: challenge.user,
+    });
+  } catch (error) {
+    next(error);
   }
 }

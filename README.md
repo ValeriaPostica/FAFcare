@@ -188,6 +188,10 @@ Open `backend/.env` and replace `YOUR_POSTGRES_PASSWORD` with your own PostgreSQ
 DATABASE_URL=postgresql://postgres:YOUR_POSTGRES_PASSWORD@localhost:5432/fafcare?sslmode=disable
 PORT=5000
 SEED_PASSWORD=Password123!
+JWT_SECRET=replace-with-a-long-random-secret
+JWT_EXPIRES_IN=2h
+CLIENT_URL=http://localhost:5174
+MFA_RETURN_OTP=false
 PGSSLMODE=disable
 ```
 
@@ -214,6 +218,7 @@ The seed script:
 - creates users for patients and doctors;
 - creates the administrator account;
 - hashes passwords with `bcrypt`;
+- assigns each seeded patient a unique deterministic demo password in the format `SEED_PASSWORD-<patient CSV id>-Patient!`;
 - can be run again without duplicating the main records.
 
 The current CSV files do not include blood type, allergies, or chronic conditions. For the demo environment, `seed.js` generates deterministic sample values for those fields for every patient. These values are test data, not real medical information, and existing non-empty values are preserved.
@@ -283,8 +288,12 @@ Password123!
 
 ```text
 Email: tatiana.braga1@example.md
-Password: Password123!
+Password: Password123!-1-Patient!
 ```
+
+Seeded patients use a unique password based on their CSV `id`. For example, patient `id=2` uses
+`Password123!-2-Patient!`. After the password, the login flow requires a 6-digit MFA code. For local
+testing only, set `MFA_RETURN_OTP=true`; never enable this in production.
 
 After signing in, you should see the patient dashboard, the patient's appointments, and the option to book an appointment.
 

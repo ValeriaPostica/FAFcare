@@ -5,7 +5,7 @@ import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 
 import { pool } from './src/config/db.js';
-import { listAccounts, login, register, updatePatientProfile } from './src/controllers/authController.js';
+import { listAccounts, loginStep1, register, updatePatientProfile, verifyMfa } from './src/controllers/authController.js';
 import { doctors, schedules, specialties } from './src/controllers/catalogController.js';
 import { createAppointment, listAppointments } from './src/controllers/appointmentController.js';
 import { booklet, createMedicalRecord, createPrescription, records } from './src/controllers/medicalController.js';
@@ -15,6 +15,7 @@ import {
   appointmentSchema,
   doctorIdParamsSchema,
   loginSchema,
+  mfaSchema,
   medicalRecordSchema,
   patientIdParamsSchema,
   prescriptionSchema,
@@ -72,7 +73,9 @@ app.get('/api/health', async (req, res, next) => {
   }
 });
 
-app.post('/api/auth/login', authLimiter, validateBody(loginSchema), login);
+app.post('/api/auth/login-step1', authLimiter, validateBody(loginSchema), loginStep1);
+app.post('/api/auth/login', authLimiter, validateBody(loginSchema), loginStep1);
+app.post('/api/auth/verify-mfa', authLimiter, validateBody(mfaSchema), verifyMfa);
 app.post('/api/auth/register', authLimiter, validateBody(registerSchema), register);
 app.get('/api/admin/accounts', authenticate, requireRole('admin'), listAccounts);
 

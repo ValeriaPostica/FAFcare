@@ -9,6 +9,11 @@ export const loginSchema = z.object({
   password: z.string().min(1).max(128),
 }).strict();
 
+export const mfaSchema = z.object({
+  mfaToken: z.string().min(40).max(100),
+  otpCode: z.string().regex(/^\d{6}$/, 'OTP must contain exactly 6 digits'),
+}).strict();
+
 export const registerSchema = z.object({
   fullName: nonEmptyText(100),
   email: z.string().trim().email().max(255),
