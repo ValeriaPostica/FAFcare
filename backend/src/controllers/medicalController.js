@@ -66,8 +66,11 @@ export async function booklet(req, res, next) {
 export async function createPrescription(req, res, next) {
   try {
     const { patient_id, doctor_id, medication_name, dosage_instructions, duration_days } = req.body;
-    if (!patient_id || !doctor_id || !medication_name || !dosage_instructions) {
-      return res.status(400).json({ error: 'patient_id, doctor_id, medication_name and dosage_instructions are required' });
+    if (!patient_id || !medication_name || !dosage_instructions) {
+      return res.status(400).json({ error: 'patient_id, medication_name and dosage_instructions are required' });
+    }
+    if (doctor_id && doctor_id !== req.user.doctorId) {
+      return res.status(403).json({ error: 'Doctors can create prescriptions only as themselves' });
     }
 
     const { rows } = await query(`
@@ -76,7 +79,7 @@ export async function createPrescription(req, res, next) {
       VALUES ($1, $2, $3, $4, $5)
       RETURNING id, patient_id, doctor_id, medication_name, dosage_instructions,
                 duration_days, status, issued_at
-    `, [patient_id, doctor_id, medication_name, dosage_instructions, duration_days || null]);
+    `, [patient_id, req.user.doctorId, medication_name, dosage_instructions, duration_days || null]);
     res.status(201).json(rows[0]);
   } catch (error) { next(error); }
 }
@@ -87,6 +90,9 @@ export async function createMedicalRecord(req, res, next) {
     if (!patient_id || !diagnosis) {
       return res.status(400).json({ error: 'patient_id and diagnosis are required' });
     }
+    if (doctor_id && doctor_id !== req.user.doctorId) {
+      return res.status(403).json({ error: 'Doctors can create records only as themselves' });
+    }
 
     const { rows } = await query(`
       INSERT INTO medical_records
@@ -94,7 +100,7 @@ export async function createMedicalRecord(req, res, next) {
       VALUES ($1, $2, COALESCE($3, 'other'), $4, $5, TRUE, $6)
       RETURNING id, patient_id, diagnosis, diagnosis_type, notes, recommendations, created_at,
                 is_verified, verified_by_doctor_id
-    `, [patient_id, diagnosis, diagnosis_type || 'other', notes || null, recommendations || null, doctor_id || null]);
+    `, [patient_id, diagnosis, diagnosis_type || 'other', notes || null, recommendations || null, req.user.doctorId]);
     res.status(201).json(rows[0]);
   } catch (error) { next(error); }
 }

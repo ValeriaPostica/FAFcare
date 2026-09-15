@@ -1,9 +1,20 @@
 import bcrypt from 'bcrypt';
+import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
+import nodemailer from 'nodemailer';
 import { query, pool } from '../config/db.js';
+import { getJwtSecret } from '../config/security.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '2h';
+const MFA_TTL_MS = 5 * 60 * 1000;
+const MFA_MAX_ATTEMPTS = 5;
+const mfaChallenges = new Map();
+const mailTransport = process.env.SMTP_HOST ? nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT || 587),
+  secure: process.env.SMTP_SECURE === 'true',
+  auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } : undefined,
+}) : null;
 
 // Helper: Formats user objects securely (excluding password hashes)
 const publicUser = (row) => ({
@@ -26,9 +37,50 @@ const generateToken = (user) => {
       doctorId: user.doctor_id || null,
       role: (user.role || 'patient').toLowerCase()
     },
-    JWT_SECRET,
+    getJwtSecret(),
     { expiresIn: JWT_EXPIRES_IN }
   );
+};
+
+const cleanupMfaChallenges = () => {
+  const now = Date.now();
+  for (const [token, challenge] of mfaChallenges) {
+    if (challenge.expiresAt <= now) mfaChallenges.delete(token);
+  }
+};
+
+const createMfaChallenge = async (user) => {
+  cleanupMfaChallenges();
+  const otpCode = crypto.randomInt(0, 1000000).toString().padStart(6, '0');
+  const mfaToken = crypto.randomBytes(32).toString('base64url');
+  mfaChallenges.set(mfaToken, {
+    user,
+    otpHash: await bcrypt.hash(otpCode, 10),
+    expiresAt: Date.now() + MFA_TTL_MS,
+    attempts: 0,
+  });
+
+  if (mailTransport) {
+    try {
+      await mailTransport.sendMail({
+        from: process.env.SMTP_FROM || process.env.SMTP_USER,
+        to: user.email,
+        subject: 'FAFCare verification code',
+        text: `Your FAFCare verification code is ${otpCode}. It expires in 5 minutes.`,
+      });
+    } catch (error) {
+      mfaChallenges.delete(mfaToken);
+      throw new Error('Verification email could not be sent');
+    }
+  } else if (process.env.NODE_ENV !== 'production') {
+    console.info(`[MFA development OTP] ${user.email}: ${otpCode}`);
+  }
+
+  return {
+    mfaToken,
+    expiresIn: MFA_TTL_MS / 1000,
+    ...(!mailTransport && process.env.MFA_RETURN_OTP === 'true' ? { otpCode } : {}),
+  };
 };
 
 // GET /api/auth/accounts (Admin/List accounts)
@@ -51,12 +103,12 @@ export async function listAccounts(req, res, next) {
   }
 }
 
-// POST /api/auth/login
-export async function login(req, res, next) {
+// POST /api/auth/login-step1
+export async function loginStep1(req, res, next) {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
+    if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
@@ -79,11 +131,11 @@ export async function login(req, res, next) {
     }
 
     const userData = publicUser(user);
-    const token = generateToken(user);
+    const challenge = await createMfaChallenge(userData);
 
     res.json({
-      message: 'Authentication successful',
-      token,
+      message: 'Credentials accepted. MFA verification required.',
+      ...challenge,
       user: userData
     });
   } catch (error) { 
@@ -97,12 +149,20 @@ export async function register(req, res, next) {
   try {
     const { fullName, email, phone, password } = req.body;
 
-    // 1. Basic Input Validation
-    if (!fullName || !email || !password) {
+    if (typeof fullName !== 'string' || typeof email !== 'string' || typeof password !== 'string' ||
+        !fullName.trim() || !email.trim() || !password) {
       return res.status(400).json({ error: 'Full name, email, and password are required' });
     }
 
-    if (password.length < 8) {
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      return res.status(400).json({ error: 'A valid email address is required' });
+    }
+
+    if (fullName.trim().length > 100 || email.trim().length > 255) {
+      return res.status(400).json({ error: 'Full name or email is too long' });
+    }
+
+    if (password.length < 8 || password.length > 128) {
       return res.status(400).json({ error: 'Password must be at least 8 characters long' });
     }
 
@@ -135,11 +195,11 @@ export async function register(req, res, next) {
     };
 
     const userData = publicUser(combinedUserData);
-    const token = generateToken(combinedUserData);
+    const challenge = await createMfaChallenge(userData);
 
     res.status(201).json({
-      message: 'User registered successfully',
-      token,
+      message: 'User registered. MFA verification required.',
+      ...challenge,
       user: userData
     });
 
@@ -195,5 +255,56 @@ export async function updatePatientProfile(req, res, next) {
     next(error);
   } finally { 
     client.release(); 
+  }
+}
+
+// POST /api/auth/verify-mfa
+export async function verifyMfa(req, res, next) {
+  try {
+    const { mfaToken, otpCode } = req.body;
+    cleanupMfaChallenges();
+    const challenge = mfaChallenges.get(mfaToken);
+
+    if (!challenge || challenge.expiresAt <= Date.now()) {
+      mfaChallenges.delete(mfaToken);
+      return res.status(401).json({ error: 'MFA challenge expired or invalid' });
+    }
+
+    challenge.attempts += 1;
+    const validOtp = await bcrypt.compare(otpCode, challenge.otpHash);
+    if (!validOtp) {
+      if (challenge.attempts >= MFA_MAX_ATTEMPTS) mfaChallenges.delete(mfaToken);
+      return res.status(401).json({ error: 'Invalid MFA code' });
+    }
+
+    mfaChallenges.delete(mfaToken);
+    res.json({
+      message: 'Authentication successful',
+      token: generateToken(challenge.user),
+      user: challenge.user,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// POST /api/auth/resend-mfa
+export async function resendMfa(req, res, next) {
+  try {
+    const { mfaToken } = req.body;
+    cleanupMfaChallenges();
+    const challenge = mfaChallenges.get(mfaToken);
+
+    if (!challenge) {
+      return res.status(401).json({ error: 'MFA challenge expired or invalid' });
+    }
+
+    mfaChallenges.delete(mfaToken);
+    res.json({
+      message: 'A new MFA code was generated.',
+      ...await createMfaChallenge(challenge.user),
+    });
+  } catch (error) {
+    next(error);
   }
 }

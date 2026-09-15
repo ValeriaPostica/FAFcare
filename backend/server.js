@@ -2,20 +2,38 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 
 import { pool } from './src/config/db.js';
-import { login, register, updatePatientProfile } from './src/controllers/authController.js';
+import { listAccounts, loginStep1, register, resendMfa, updatePatientProfile, verifyMfa } from './src/controllers/authController.js';
 import { doctors, schedules, specialties } from './src/controllers/catalogController.js';
 import { createAppointment, listAppointments } from './src/controllers/appointmentController.js';
 import { booklet, createMedicalRecord, createPrescription, records } from './src/controllers/medicalController.js';
+import { authenticate, requirePatientAccess, requireRole } from './src/middleware/auth.js';
+import {
+  appointmentQuerySchema,
+  appointmentSchema,
+  doctorIdParamsSchema,
+  loginSchema,
+  mfaSchema,
+  medicalRecordSchema,
+  patientIdParamsSchema,
+  prescriptionSchema,
+  profileSchema,
+  registerSchema,
+  resendMfaSchema,
+  validateBody,
+  validateParams,
+  validateQuery,
+} from './src/middleware/validation.js';
 
 dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key-change-in-production';
+
+// Nginx is the single trusted reverse proxy in the Docker deployment.
+app.set('trust proxy', 1);
 
 // ==========================================
 // 1. SECURITY MIDDLEWARES
@@ -43,38 +61,6 @@ const authLimiter = rateLimit({
 });
 
 // ==========================================
-// 2. AUTHENTICATION & RBAC MIDDLEWARES
-// ==========================================
-
-// JWT Verification Middleware (Authentication)
-export const authenticate = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ error: 'Access denied: Missing authentication token' });
-  }
-
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded; // Attach decoded payload { userId, role } to the request object
-    next();
-  } catch (err) {
-    return res.status(403).json({ error: 'Forbidden: Invalid or expired token' });
-  }
-};
-
-// Role-Based Access Control Middleware (Authorization / RBAC)
-export const requireRole = (...allowedRoles) => {
-  return (req, res, next) => {
-    if (!req.user || !allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Forbidden: Insufficient permissions' });
-    }
-    next();
-  };
-};
-
-// ==========================================
 // 3. APPLICATION ROUTES & ENDPOINTS
 // ==========================================
 
@@ -88,27 +74,31 @@ app.get('/api/health', async (req, res, next) => {
   }
 });
 
-app.post('/api/auth/login', authLimiter, login);
-app.post('/api/auth/register', authLimiter, register);
+app.post('/api/auth/login-step1', authLimiter, validateBody(loginSchema), loginStep1);
+app.post('/api/auth/login', authLimiter, validateBody(loginSchema), loginStep1);
+app.post('/api/auth/verify-mfa', authLimiter, validateBody(mfaSchema), verifyMfa);
+app.post('/api/auth/resend-mfa', authLimiter, validateBody(resendMfaSchema), resendMfa);
+app.post('/api/auth/register', authLimiter, validateBody(registerSchema), register);
+app.get('/api/admin/accounts', authenticate, requireRole('admin'), listAccounts);
 
 app.get('/api/specialties', specialties);
 app.get('/api/doctors', doctors);
-app.get('/api/doctors/:doctorId/schedules', schedules);
+app.get('/api/doctors/:doctorId/schedules', validateParams(doctorIdParamsSchema), schedules);
 
 // Protected Patient Routes (Prevents Unauthorized Access & IDOR)
-app.patch('/api/patients/:patientId/profile', authenticate, updatePatientProfile);
+app.patch('/api/patients/:patientId/profile', authenticate, validateParams(patientIdParamsSchema), validateBody(profileSchema), requirePatientAccess((req) => req.params.patientId), updatePatientProfile);
 
 // Appointment Management Routes
-app.get('/api/appointments', authenticate, listAppointments);
-app.post('/api/appointments', authenticate, requireRole('patient'), createAppointment);
+app.get('/api/appointments', authenticate, requireRole('patient', 'doctor', 'admin'), validateQuery(appointmentQuerySchema), listAppointments);
+app.post('/api/appointments', authenticate, requireRole('patient'), validateBody(appointmentSchema), createAppointment);
 
 // Medical Record Routes (Restricted to authorized users)
-app.get('/api/patients/:patientId/medical-records', authenticate, records);
-app.get('/api/patient/booklet/:patientId', authenticate, booklet);
+app.get('/api/patients/:patientId/medical-records', authenticate, validateParams(patientIdParamsSchema), requirePatientAccess((req) => req.params.patientId), records);
+app.get('/api/patient/booklet/:patientId', authenticate, validateParams(patientIdParamsSchema), requirePatientAccess((req) => req.params.patientId), booklet);
 
 // Doctor Operations (Strictly restricted to 'doctor' role)
-app.post('/api/medical-records', authenticate, requireRole('doctor'), createMedicalRecord);
-app.post('/api/prescriptions', authenticate, requireRole('doctor'), createPrescription);
+app.post('/api/medical-records', authenticate, requireRole('doctor'), validateBody(medicalRecordSchema), createMedicalRecord);
+app.post('/api/prescriptions', authenticate, requireRole('doctor'), validateBody(prescriptionSchema), createPrescription);
 
 // ==========================================
 // 4. GLOBAL ERROR HANDLING MIDDLEWARE
