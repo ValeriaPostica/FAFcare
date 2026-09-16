@@ -47,6 +47,25 @@ CREATE TABLE IF NOT EXISTS doctors (
     price_per_consultation DECIMAL(10, 2)
 );
 
+CREATE TABLE IF NOT EXISTS patient_access_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    doctor_id UUID NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
+    patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    accessed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    action_type VARCHAR(50) NOT NULL CHECK (action_type IN (
+        'VIEW_MEDICAL_RECORDS',
+        'VIEW_PATIENT_PROFILE',
+        'VIEW_MEDICAL_BOOKLET'
+    )),
+    reason TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS patient_access_logs_patient_time_idx
+    ON patient_access_logs (patient_id, accessed_at DESC);
+
+CREATE INDEX IF NOT EXISTS patient_access_logs_doctor_time_idx
+    ON patient_access_logs (doctor_id, accessed_at DESC);
+
 CREATE TABLE IF NOT EXISTS doctor_schedules (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     doctor_id UUID REFERENCES doctors(id) ON DELETE CASCADE,

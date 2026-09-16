@@ -15,6 +15,7 @@ export default function App() {
   const [appointments, setAppointments] = useState([]);
   const [booklet, setBooklet] = useState(null);
   const [bookletLoading, setBookletLoading] = useState(false);
+  const [auditLogs, setAuditLogs] = useState([]);
   const [pdfPreviewHtml, setPdfPreviewHtml] = useState(null);
 
   // --- AUTH AND NAVIGATION STATE ---
@@ -58,6 +59,9 @@ export default function App() {
   // --- DOCTOR COMPLETION MODAL STATE ---
   const [isCompleteModalOpen, setIsCompleteModalOpen] = useState(false);
   const [selectedAppointmentToComplete, setSelectedAppointmentToComplete] = useState(null);
+  const [selectedPatientProfile, setSelectedPatientProfile] = useState(null);
+  const [selectedPatientBooklet, setSelectedPatientBooklet] = useState(null);
+  const [recommendationDrafts, setRecommendationDrafts] = useState({});
   const [completionFormData, setCompletionFormData] = useState({
     diagnosis: '',
     diagnosisType: 'other',
@@ -150,12 +154,19 @@ export default function App() {
   useEffect(() => {
     if (!currentUser?.patient_id) {
       setBooklet(null);
+      setAuditLogs([]);
       return;
     }
 
     setBookletLoading(true);
-    api(`/patient/booklet/${currentUser.patient_id}`)
-      .then(setBooklet)
+    Promise.all([
+      api(`/patient/booklet/${currentUser.patient_id}`),
+      api('/patient/audit-logs'),
+    ])
+      .then(([bookletData, logs]) => {
+        setBooklet(bookletData);
+        setAuditLogs(logs);
+      })
       .catch((error) => setNotification(`Medical booklet unavailable: ${error.message}`))
       .finally(() => setBookletLoading(false));
   }, [currentUser]);
@@ -254,6 +265,39 @@ export default function App() {
     } catch (error) { setNotification(error.message); }
   };
 
+  const handleViewPatientProfile = async (appointment) => {
+    try {
+      const [profile, medicalBooklet] = await Promise.all([
+        api(`/patients/${appointment.patient_id}`),
+        api(`/patient/booklet/${appointment.patient_id}`),
+      ]);
+      setSelectedPatientProfile(profile);
+      setSelectedPatientBooklet(medicalBooklet);
+      setRecommendationDrafts(Object.fromEntries(
+        (medicalBooklet.verified_records || []).map((record) => [record.id, record.recommendations || '']),
+      ));
+    } catch (error) {
+      setNotification(`Patient profile unavailable: ${error.message}`);
+    }
+  };
+
+  const handleRecommendationSave = async (recordId) => {
+    try {
+      const updatedRecord = await api(`/medical-records/${recordId}/recommendations`, {
+        method: 'PATCH',
+        body: JSON.stringify({ recommendations: recommendationDrafts[recordId] || '' }),
+      });
+      setSelectedPatientBooklet((bookletData) => ({
+        ...bookletData,
+        verified_records: bookletData.verified_records.map((record) => record.id === recordId ? updatedRecord : record),
+      }));
+      setNotification('Recommendation updated successfully.');
+      setTimeout(() => setNotification(null), 4000);
+    } catch (error) {
+      setNotification(`Recommendation could not be updated: ${error.message}`);
+    }
+  };
+
   // Finish booking
   const handleConfirmBooking = async () => {
     const slot = await api(`/doctors/${selectedDoctor.id}/schedules`);
@@ -277,20 +321,11 @@ export default function App() {
     e.preventDefault();
     if (!selectedAppointmentToComplete) return;
 
-    const updated = appointments.map((app) => {
-      if (app.id === selectedAppointmentToComplete.id) {
-        return {
-          ...app,
-          status: 'Completed',
-          diagnosis: completionFormData.diagnosis,
-          prescription: completionFormData.prescription,
-          notes: completionFormData.notes,
-        };
-      }
-      return app;
-    });
-
-    setAppointments(updated);
+    if (selectedAppointmentToComplete.status === 'Completed') {
+      setIsCompleteModalOpen(false);
+      setSelectedAppointmentToComplete(null);
+      return;
+    }
 
     try {
       await api('/medical-records', {
@@ -307,19 +342,15 @@ export default function App() {
       setNotification(`Consultation saved locally, but medical record was not stored: ${err.message}`);
     }
 
-    try {
-      await api(`/appointments/${selectedAppointmentToComplete.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          status: 'completed',
-          diagnosis: completionFormData.diagnosis,
-          prescription: completionFormData.prescription,
-          notes: completionFormData.notes,
-        }),
-      });
-    } catch (err) {
-      // Local state fallback
-    }
+    await api(`/appointments/${selectedAppointmentToComplete.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        status: 'completed',
+        diagnosis: completionFormData.diagnosis,
+        prescription: completionFormData.prescription,
+        notes: completionFormData.notes,
+      }),
+    });
 
     if (completionFormData.prescription?.trim() && currentUser.doctor_id && selectedAppointmentToComplete.patient_id) {
       try {
@@ -340,6 +371,7 @@ export default function App() {
     setIsCompleteModalOpen(false);
     setSelectedAppointmentToComplete(null);
     setCompletionFormData({ diagnosis: '', diagnosisType: 'other', prescription: '', notes: '' });
+    await loadAppointments(currentUser);
     setNotification('Consultation marked as completed and added to Medical History!');
     setTimeout(() => setNotification(null), 4000);
   };
@@ -614,6 +646,12 @@ export default function App() {
                     </div>
 
                     <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleViewPatientProfile(app)}
+                        className="px-3 py-1.5 border border-slate-200 text-slate-700 hover:bg-slate-100 font-medium text-xs rounded-lg transition"
+                      >
+                        View patient profile
+                      </button>
                       {app.status !== 'Completed' ? (
                         <>
                           <button
@@ -641,6 +679,45 @@ export default function App() {
             )}
           </div>
         </main>
+
+        {selectedPatientProfile && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100">
+              <div className="p-5 bg-slate-800 text-white flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-lg">Patient medical card</h3>
+                  <p className="text-xs text-slate-300">Read-only medical record with editable recommendations</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => { setSelectedPatientProfile(null); setSelectedPatientBooklet(null); setRecommendationDrafts({}); }} className="p-1 hover:bg-white/10 rounded-lg text-white">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+              <div className="p-6 space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                  <div><p className="text-xs text-slate-500 mb-1">Full name</p><p className="font-semibold text-slate-800">{selectedPatientProfile.full_name}</p></div>
+                  <div><p className="text-xs text-slate-500 mb-1">Date of birth</p><p className="font-semibold text-slate-800">{selectedPatientProfile.birth_date || 'Not recorded'}</p></div>
+                  <div><p className="text-xs text-slate-500 mb-1">Gender</p><p className="font-semibold text-slate-800">{selectedPatientProfile.gender || 'Not recorded'}</p></div>
+                  <div><p className="text-xs text-slate-500 mb-1">Insurance</p><p className="font-semibold text-slate-800">{selectedPatientProfile.insurance_type || 'Not recorded'}</p></div>
+                  <div><p className="text-xs text-slate-500 mb-1">Blood type</p><p className="font-semibold text-slate-800">{selectedPatientProfile.blood_type || 'Not recorded'}</p></div>
+                  <div><p className="text-xs text-slate-500 mb-1">Allergies</p><p className="font-semibold text-slate-800">{selectedPatientProfile.allergies || 'Not recorded'}</p></div>
+                  <div className="sm:col-span-2"><p className="text-xs text-slate-500 mb-1">Chronic conditions</p><p className="font-semibold text-slate-800">{selectedPatientProfile.chronic_conditions || 'Not recorded'}</p></div>
+                </div>
+
+                <div className="border-t border-slate-200 pt-5">
+                  <h4 className="font-bold text-slate-800">Verified medical records</h4>
+                  {selectedPatientBooklet?.verified_records?.length ? <div className="mt-3 space-y-3">{selectedPatientBooklet.verified_records.map((record) => <div key={record.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm"><p className="font-semibold text-slate-800">{record.diagnosis}</p><p className="mt-1 text-xs text-slate-500">{formatDate(record.created_at)}{record.verified_by_doctor ? ` • ${record.verified_by_doctor}` : ''}</p>{record.notes && <p className="mt-2 text-slate-600">{record.notes}</p>}<label className="mt-3 block"><span className="block text-xs font-semibold text-slate-600">Recommendations</span><textarea value={recommendationDrafts[record.id] || ''} onChange={(event) => setRecommendationDrafts({ ...recommendationDrafts, [record.id]: event.target.value })} rows={3} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" placeholder="Add or update recommendations" /><button type="button" onClick={() => handleRecommendationSave(record.id)} className="mt-2 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700">Save recommendation</button></label></div>)}</div> : <p className="mt-2 text-sm text-slate-500">No verified records.</p>}
+                </div>
+
+                <div className="border-t border-slate-200 pt-5">
+                  <h4 className="font-bold text-slate-800">Active prescriptions</h4>
+                  {selectedPatientBooklet?.active_prescriptions?.length ? <div className="mt-3 space-y-3">{selectedPatientBooklet.active_prescriptions.map((prescription) => <div key={prescription.id} className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm"><p className="font-semibold text-slate-800">{prescription.medication_name}</p><p className="mt-1 text-slate-600">{prescription.dosage_instructions}</p></div>)}</div> : <p className="mt-2 text-sm text-slate-500">No active prescriptions.</p>}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* DOCTOR COMPLETION MODAL */}
         {isCompleteModalOpen && selectedAppointmentToComplete && (
@@ -930,6 +1007,7 @@ export default function App() {
                           { id: 'visits', number: '02', label: 'Consultations', icon: FileCheck },
                           { id: 'history', number: '03', label: 'Illness History', icon: History },
                           { id: 'prescriptions', number: '04', label: 'Prescriptions', icon: Pill },
+                          { id: 'access-log', number: '05', label: 'Security & Access', icon: ShieldCheck },
                         ].map(({ id, number, label, icon: Icon }) => (
                           <button key={id} onClick={() => setBookletSection(id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition ${bookletSection === id ? 'bg-white text-teal-900 shadow-sm' : 'text-teal-50 hover:bg-white/10'}`}>
                             <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-black ${bookletSection === id ? 'bg-teal-100 text-teal-800' : 'bg-white/10 text-teal-100'}`}>{number}</span>
@@ -1041,6 +1119,38 @@ export default function App() {
                             <p className="mt-3 text-xs text-slate-500">{prescription.duration_days ? `${prescription.duration_days} days` : 'Continuous'}{prescription.doctor_name ? ` • Issued by ${prescription.doctor_name}` : ''}</p>
                           </article>
                         ))}
+                      </div>
+                    )}
+                    </section>
+                  )}
+
+                  {bookletSection === 'access-log' && (
+                    <section>
+                    <div className="mb-5 flex items-start justify-between gap-4 border-b border-slate-200 pb-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-teal-700">Page No. 05</p><h3 className="mt-1 text-2xl font-black tracking-tight text-slate-900">Security & Access Log</h3><p className="mt-1 text-sm text-slate-500">A record of doctors who accessed your medical information</p></div><div className="rounded-xl bg-teal-50 p-3 text-teal-700"><ShieldCheck className="h-6 w-6" /></div></div>
+                    {auditLogs.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500">No access activity recorded yet.</div>
+                    ) : (
+                      <div className="overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                          <thead className="bg-slate-50 text-xs font-bold uppercase tracking-wider text-slate-500">
+                            <tr>
+                              <th className="px-4 py-3">Doctor name</th>
+                              <th className="px-4 py-3">Specialty</th>
+                              <th className="px-4 py-3">Date / time</th>
+                              <th className="px-4 py-3">Access reason</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                            {auditLogs.map((log) => (
+                              <tr key={log.id} className="align-top transition hover:bg-teal-50/40">
+                                <td className="whitespace-nowrap px-4 py-4 font-semibold text-slate-800">{log.doctor_name || 'Unknown doctor'}</td>
+                                <td className="whitespace-nowrap px-4 py-4 text-slate-600">{log.specialty || 'Not recorded'}</td>
+                                <td className="whitespace-nowrap px-4 py-4 text-slate-600">{new Date(log.accessed_at).toLocaleString('en-GB')}</td>
+                                <td className="px-4 py-4 text-slate-600">{log.reason}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     )}
                     </section>

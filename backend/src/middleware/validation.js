@@ -31,6 +31,7 @@ export const registerSchema = z.object({
 
 export const patientIdParamsSchema = z.object({ patientId: uuid }).strict();
 export const doctorIdParamsSchema = z.object({ doctorId: uuid }).strict();
+export const medicalRecordIdParamsSchema = z.object({ recordId: uuid }).strict();
 
 export const profileSchema = z.object({
   fullName: nonEmptyText(100),
@@ -67,6 +68,10 @@ export const medicalRecordSchema = z.object({
   diagnosis: nonEmptyText(10000),
   diagnosis_type: z.enum(['chronic', 'acute', 'other']).default('other'),
   notes: z.string().trim().max(10000).optional().or(z.literal('')),
+  recommendations: z.string().trim().max(10000).optional().or(z.literal('')),
+}).strict();
+
+export const medicalRecordRecommendationsSchema = z.object({
   recommendations: z.string().trim().max(10000).optional().or(z.literal('')),
 }).strict();
 
