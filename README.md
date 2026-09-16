@@ -7,13 +7,112 @@ FAFCare is an application with:
 - a PostgreSQL database;
 - authentication for patients, doctors, and administrators.
 
-## 1. Requirements
+## 1. Setup
+### Docker setup
 
-Install the following on your laptop:
+Install and start [Docker Desktop](https://www.docker.com/products/docker-desktop/), then open PowerShell in the project root, the folder containing `docker-compose.yml`:
 
-- Node.js LTS: https://nodejs.org/
-- PostgreSQL: https://www.postgresql.org/download/windows/
-- optionally, pgAdmin 4, which is usually installed with PostgreSQL.
+```powershell
+docker compose up --build -d
+```
+
+Open [http://localhost:5174](http://localhost:5174).
+
+The application uses this internal flow:
+
+```text
+browser -> frontend/Nginx -> backend/Express -> PostgreSQL
+```
+
+The frontend is available at port `5174`. The backend is not exposed directly to the host; Nginx forwards `/api` requests to it inside Docker. PostgreSQL is exposed on port `5432` for optional database tools.
+
+#### Daily Docker workflow
+
+You do not need to stop and start the containers every time. If Docker Desktop and the containers are still running, open [http://localhost:5174](http://localhost:5174). After restarting the computer or Docker Desktop, run:
+
+```powershell
+docker compose up -d
+```
+
+Use `--build` after changing a Dockerfile, `docker-compose.yml`, dependencies, Vite configuration, or source code included in the production image:
+
+```powershell
+docker compose up --build -d
+```
+
+#### Docker commands
+
+```powershell
+# check container status
+docker compose ps
+
+# follow logs from all services
+docker compose logs -f
+
+# follow only backend logs
+docker compose logs -f backend
+
+# stop containers and keep the database volume
+docker compose down
+
+# start existing containers again
+docker compose up -d
+
+# stop containers and delete the database volume
+# use this only when you want a completely fresh database
+docker compose down -v
+docker compose up --build -d
+```
+
+`docker compose down` does not delete the PostgreSQL data. `docker compose down -v` deletes the local database volume, so the schema and demo data are recreated on the next startup.
+
+Default Docker database credentials are:
+
+```text
+Database: fafcare
+User: postgres
+Password: postgres
+PostgreSQL port: 5432
+Frontend URL: http://localhost:5174
+```
+
+Seeded demo accounts use unique deterministic demo passwords. The Compose defaults are suitable for local development only. Do not use them in production. To override them, create a root `.env` file next to `docker-compose.yml`:
+
+```env
+POSTGRES_PASSWORD=your-local-password
+SEED_PASSWORD=your-demo-password
+JWT_SECRET=replace-with-a-long-random-secret
+CLIENT_URL=http://localhost:5174
+```
+
+`JWT_SECRET` is mandatory for Docker startup and must be long, random, and private. Do not commit `.env` to Git.
+
+#### Docker troubleshooting
+
+If a port is already in use, change the host side of the mapping in `docker-compose.yml`. For example, change `5174:80` to `5175:80`, then open `http://localhost:5175`.
+
+If the frontend or API does not respond, inspect the logs:
+
+```powershell
+docker compose ps
+docker compose logs --tail=100 backend
+docker compose logs --tail=100 frontend
+```
+
+If the database was created incorrectly or you need to reimport all demo data, recreate the volume:
+
+```powershell
+docker compose down -v
+docker compose up --build -d
+```
+
+During PostgreSQL installation, remember the password you choose for the `postgres` user and keep the default port:
+
+```text
+5432
+```
+
+You do not need `psql` in your PATH if you use pgAdmin.
 
 During PostgreSQL installation, remember the password you choose for the `postgres` user and keep the default port:
 
@@ -89,10 +188,24 @@ Open `backend/.env` and replace `YOUR_POSTGRES_PASSWORD` with your own PostgreSQ
 DATABASE_URL=postgresql://postgres:YOUR_POSTGRES_PASSWORD@localhost:5432/fafcare?sslmode=disable
 PORT=5000
 SEED_PASSWORD=Password123!
+JWT_SECRET=replace-with-a-long-random-secret
+JWT_EXPIRES_IN=2h
+CLIENT_URL=http://localhost:5174
+MFA_RETURN_OTP=false
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASSWORD=
+SMTP_FROM=
 PGSSLMODE=disable
 ```
 
 If your password contains URL characters such as `@`, `:`, `/`, or `#`, URL-encode them in `DATABASE_URL`. For example, `pa@ss` becomes `pa%40ss`. Do not commit `.env` to Git.
+
+For real MFA email delivery, configure the SMTP variables. With `SMTP_HOST` set, the OTP is sent to
+the user's email and is not returned by the API or shown in the UI. Without SMTP, set
+`MFA_RETURN_OTP=true` only for a local demo notification; keep it `false` in production.
 
 ## 5. Import the CSV data
 
@@ -115,6 +228,7 @@ The seed script:
 - creates users for patients and doctors;
 - creates the administrator account;
 - hashes passwords with `bcrypt`;
+- assigns each seeded patient a unique deterministic demo password in the format `SEED_PASSWORD-<patient CSV id>-Patient!`;
 - can be run again without duplicating the main records.
 
 The current CSV files do not include blood type, allergies, or chronic conditions. For the demo environment, `seed.js` generates deterministic sample values for those fields for every patient. These values are test data, not real medical information, and existing non-empty values are preserved.
@@ -174,18 +288,17 @@ VITE_API_URL=http://localhost:5000/api
 
 ## 8. Test accounts
 
-All accounts imported by the seed script use this password:
-
-```text
-Password123!
-```
-
 ### Patient
 
 ```text
 Email: tatiana.braga1@example.md
-Password: Password123!
+Password: Password123!-Patient-1!
 ```
+
+Seeded patients use a unique password based on their CSV `id`. For example, patient `id=2` uses
+`Password123!-Patient-2!`. After the password, the login flow requires a 6-digit MFA code. The code
+is not shown in the application. For local testing, it is written to the backend console; a real
+deployment must deliver it through an SMS/email provider.
 
 After signing in, you should see the patient dashboard, the patient's appointments, and the option to book an appointment.
 
@@ -193,7 +306,7 @@ After signing in, you should see the patient dashboard, the patient's appointmen
 
 ```text
 Email: doctor.1@fafcare.local
-Password: Password123!
+Password: Password123!-Doctor-1!
 ```
 
 After signing in, you should see the doctor dashboard and the appointments assigned to that doctor.
@@ -204,7 +317,7 @@ Doctor emails are generated by the seed script in the format `doctor.N@fafcare.l
 
 ```text
 Email: admin@fafcare.com
-Password: Password123!
+Password: Password123!-Admin!
 ```
 
 After signing in, you should see the administrator dashboard with a summary of doctors, specialties, and appointments.
