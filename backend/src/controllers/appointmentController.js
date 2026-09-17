@@ -2,7 +2,13 @@ import { pool, query } from '../config/db.js';
 
 const appointmentSelect = `
   SELECT a.id, a.patient_id, a.doctor_id, a.schedule_slot_id, a.appointment_type,
-         a.status, a.scheduled_at, a.price, pu.full_name AS patient_name,
+         CASE WHEN a.status = 'completed' OR EXISTS (
+           SELECT 1 FROM medical_records mr
+           WHERE mr.patient_id = a.patient_id
+             AND mr.verified_by_doctor_id = a.doctor_id
+             AND mr.created_at >= a.scheduled_at
+         ) THEN 'completed' ELSE a.status END AS status,
+         a.scheduled_at, a.price, pu.full_name AS patient_name,
          du.full_name AS doctor, s.name AS spec
   FROM appointments a
   JOIN patients p ON p.id = a.patient_id
