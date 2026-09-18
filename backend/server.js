@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 
 import { pool } from './src/config/db.js';
 import { listAccounts, loginStep1, register, resendMfa, updatePatientProfile, verifyMfa } from './src/controllers/authController.js';
-import { doctors, schedules, specialties } from './src/controllers/catalogController.js';
+import { createDoctorReview, doctorReviews, doctors, schedules, specialties } from './src/controllers/catalogController.js';
 import { createAppointment, listAppointments, updateAppointment } from './src/controllers/appointmentController.js';
 import { auditLogs, booklet, createMedicalRecord, createPrescription, patientProfile, records, updateMedicalRecordRecommendations } from './src/controllers/medicalController.js';
 import { authenticate, requirePatientAccess, requireRole } from './src/middleware/auth.js';
@@ -25,6 +25,7 @@ import {
   profileSchema,
   registerSchema,
   resendMfaSchema,
+  reviewSchema,
   validateBody,
   validateParams,
   validateQuery,
@@ -87,6 +88,8 @@ app.get('/api/admin/accounts', authenticate, requireRole('admin'), listAccounts)
 app.get('/api/specialties', specialties);
 app.get('/api/doctors', doctors);
 app.get('/api/doctors/:doctorId/schedules', validateParams(doctorIdParamsSchema), schedules);
+app.post('/api/doctors/:doctorId/reviews', authenticate, requireRole('patient'), validateParams(doctorIdParamsSchema), validateBody(reviewSchema), createDoctorReview);
+app.get('/api/doctor/reviews', authenticate, requireRole('doctor'), doctorReviews);
 
 // Protected Patient Routes (Prevents Unauthorized Access & IDOR)
 app.patch('/api/patients/:patientId/profile', authenticate, requireRole('patient'), validateParams(patientIdParamsSchema), validateBody(profileSchema), requirePatientAccess((req) => req.params.patientId), updatePatientProfile);

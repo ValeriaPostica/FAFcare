@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { 
-  Activity, Calendar, FileText, Pill, User, LogOut, PlusCircle, ArrowLeft, 
+  Activity, Calendar, FileText, Pill, User, LogOut, PlusCircle, ArrowLeft, ChevronLeft, ChevronRight,
   Mail, Lock, Phone, Eye, EyeOff, ShieldCheck, CheckCircle2, Clock, 
-  ChevronRight, Download, Heart, Droplets, Thermometer, Plus, X, Stethoscope, 
+  Download, Heart, Droplets, Thermometer, Plus, X, Stethoscope, 
   Building, Check, Users, History, FileCheck, Printer, Search
 } from 'lucide-react';
 
@@ -13,6 +13,7 @@ export default function App() {
 
   // --- APPOINTMENTS LIST ---
   const [appointments, setAppointments] = useState([]);
+  const [doctorReviews, setDoctorReviews] = useState({ rating_average: 0, rating_count: 0, reviews: [] });
   const [booklet, setBooklet] = useState(null);
   const [bookletLoading, setBookletLoading] = useState(false);
   const [auditLogs, setAuditLogs] = useState([]);
@@ -39,6 +40,9 @@ export default function App() {
   const [illnessDoctor, setIllnessDoctor] = useState('all');
   const [illnessYear, setIllnessYear] = useState('all');
   const [profileSurveyOpen, setProfileSurveyOpen] = useState(false);
+  const [reviewAppointment, setReviewAppointment] = useState(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
   const [profileSurveyData, setProfileSurveyData] = useState({
     fullName: '',
     birthDate: '',
@@ -93,6 +97,10 @@ export default function App() {
   const [selectedPatientProfile, setSelectedPatientProfile] = useState(null);
   const [selectedPatientBooklet, setSelectedPatientBooklet] = useState(null);
   const [recommendationDrafts, setRecommendationDrafts] = useState({});
+  const [doctorView, setDoctorView] = useState('appointments');
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
+  const [calendarMode, setCalendarMode] = useState('month');
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(() => new Date());
   const [completionFormData, setCompletionFormData] = useState({
     diagnosis: '',
     diagnosisType: 'other',
@@ -183,6 +191,16 @@ export default function App() {
   useEffect(() => { loadAppointments().catch(() => {}); }, [currentUser]);
 
   useEffect(() => {
+    if (currentUser?.role !== 'Doctor') {
+      setDoctorReviews({ rating_average: 0, rating_count: 0, reviews: [] });
+      return;
+    }
+    api('/doctor/reviews')
+      .then(setDoctorReviews)
+      .catch((error) => setNotification(`Reviews unavailable: ${error.message}`));
+  }, [currentUser]);
+
+  useEffect(() => {
     if (!currentUser?.patient_id) {
       setBooklet(null);
       setAuditLogs([]);
@@ -225,6 +243,22 @@ export default function App() {
       setNotification('Your medical profile was saved successfully.');
       setTimeout(() => setNotification(null), 4000);
     } catch (error) { setNotification(error.message); }
+  };
+
+  const handleSubmitReview = async (event) => {
+    event.preventDefault();
+    try {
+      await api(`/doctors/${reviewAppointment.doctor_id}/reviews`, {
+        method: 'POST',
+        body: JSON.stringify({ appointment_id: reviewAppointment.id, rating: reviewRating, comment: reviewComment }),
+      });
+      await loadAppointments(currentUser);
+      setReviewAppointment(null);
+      setReviewComment('');
+      setReviewRating(5);
+      setNotification('Thank you. Your review was submitted.');
+      setTimeout(() => setNotification(null), 4000);
+    } catch (error) { setNotification(`Review could not be submitted: ${error.message}`); }
   };
 
   const handleSubmitAuth = async (e) => {
@@ -410,6 +444,7 @@ export default function App() {
   // Patient-specific data loaded from PostgreSQL through the booklet endpoint.
   const userAppointments = appointments.filter(a => a.patientName === currentUser?.fullName);
   const upcomingAppointments = userAppointments.filter(a => a.status !== 'Completed');
+  const completedAppointments = userAppointments.filter(a => a.status === 'Completed');
   const bookletRecords = booklet?.verified_records || [];
   const activePrescriptions = booklet?.active_prescriptions || [];
   const bookletPatient = booklet?.patient || {};
@@ -613,6 +648,45 @@ export default function App() {
 
   if (currentUser.role === 'Doctor') {
     const doctorAppointments = appointments.filter((a) => a.doctor === currentUser.fullName);
+    const today = new Date();
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const appointmentDate = (app) => new Date(`${app.date}T${app.time || '00:00'}`);
+    const pendingDoctorAppointments = doctorAppointments.filter((app) => app.status !== 'Completed' && appointmentDate(app) < startOfToday);
+    const completedDoctorAppointments = doctorAppointments.filter((app) => app.status === 'Completed');
+    const upcomingDoctorAppointments = doctorAppointments.filter((app) => new Date(`${app.date}T${app.time || '00:00'}`) >= startOfToday);
+    const monthStart = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
+    const firstWeekday = (monthStart.getDay() + 6) % 7;
+    const daysInMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0).getDate();
+    const calendarDays = Array.from({ length: firstWeekday + daysInMonth }, (_, index) => {
+      const dayNumber = index - firstWeekday + 1;
+      return dayNumber > 0 ? new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), dayNumber) : null;
+    });
+    const appointmentsForDay = (day) => doctorAppointments.filter((app) => app.date === day.toISOString().slice(0, 10));
+    const calendarTitle = calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const startOfWeek = new Date(selectedCalendarDate);
+    startOfWeek.setDate(startOfWeek.getDate() - ((startOfWeek.getDay() + 6) % 7));
+    const calendarWeekDays = Array.from({ length: 7 }, (_, index) => {
+      const day = new Date(startOfWeek);
+      day.setDate(startOfWeek.getDate() + index);
+      return day;
+    });
+    const selectedDayAppointments = appointmentsForDay(selectedCalendarDate);
+    const setCalendarDate = (date) => {
+      setSelectedCalendarDate(date);
+      setCalendarMonth(new Date(date.getFullYear(), date.getMonth(), 1));
+    };
+    const moveCalendar = (amount) => {
+      const nextDate = new Date(selectedCalendarDate);
+      if (calendarMode === 'month') nextDate.setMonth(nextDate.getMonth() + amount);
+      if (calendarMode === 'week') nextDate.setDate(nextDate.getDate() + amount * 7);
+      if (calendarMode === 'day') nextDate.setDate(nextDate.getDate() + amount);
+      setCalendarDate(nextDate);
+    };
+    const calendarRangeTitle = calendarMode === 'month'
+      ? calendarTitle
+      : calendarMode === 'week'
+        ? `${calendarWeekDays[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${calendarWeekDays[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+        : selectedCalendarDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col">
@@ -654,16 +728,37 @@ export default function App() {
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <section className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wider text-amber-700">Your rating</p>
+              <p className="mt-2 text-4xl font-black text-amber-900">{Number(doctorReviews.rating_average || 0).toFixed(1)}<span className="text-lg">/5</span></p>
+              <p className="mt-2 text-sm text-amber-800">{doctorReviews.rating_count || 0} patient review(s)</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-center justify-between gap-3"><div><h3 className="font-bold text-slate-800">Patient reviews</h3><p className="mt-1 text-sm text-slate-500">Feedback from patients after completed consultations.</p></div><span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">{doctorReviews.rating_count || 0} total</span></div>
+              {doctorReviews.reviews.length === 0 ? <p className="mt-5 text-sm text-slate-500">No patient reviews yet.</p> : <div className="mt-4 space-y-3">{doctorReviews.reviews.map((review) => <article key={review.id} className="rounded-xl border border-slate-100 bg-slate-50 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-semibold text-slate-800">{review.patient_name}</p><span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800">{review.rating}/5</span></div>{review.comment && <p className="mt-2 text-sm text-slate-600">{review.comment}</p>}<p className="mt-2 text-xs text-slate-400">{formatDate(review.created_at)}</p></article>)}</div>}
+            </div>
+          </section>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+            <div className="flex gap-2">
+              <button onClick={() => setDoctorView('calendar')} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${doctorView === 'calendar' ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}><Calendar className="h-4 w-4" /> Calendar</button>
+              <button onClick={() => setDoctorView('appointments')} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${doctorView === 'appointments' ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}><Users className="h-4 w-4" /> Consultations</button>
+              <button onClick={() => setDoctorView('completed')} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${doctorView === 'completed' ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}><Check className="h-4 w-4" /> Completed</button>
+            </div>
+            <p className="text-xs font-semibold text-slate-500">{doctorView === 'completed' ? completedDoctorAppointments.length : pendingDoctorAppointments.length} consultation(s)</p>
+          </div>
+
+          {(doctorView === 'appointments' || doctorView === 'completed') && <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-5 border-b border-slate-100">
-              <h3 className="font-bold text-slate-800">Your patients’ appointments</h3>
+              <h3 className="font-bold text-slate-800">{doctorView === 'completed' ? 'Completed consultations' : 'Consultations requiring recommendations'}</h3>
             </div>
 
-            {doctorAppointments.length === 0 ? (
-              <div className="p-8 text-center text-slate-500">There are no appointments for you right now.</div>
+            {(doctorView === 'completed' ? completedDoctorAppointments : pendingDoctorAppointments).length === 0 ? (
+              <div className="p-8 text-center text-slate-500">{doctorView === 'completed' ? 'No completed consultations yet.' : 'No consultations require recommendations right now.'}</div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {doctorAppointments.map((app) => (
+                {(doctorView === 'completed' ? completedDoctorAppointments : pendingDoctorAppointments).map((app) => (
                   <div key={app.id} className="p-5 flex items-center justify-between hover:bg-slate-50 transition">
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 bg-blue-100 text-blue-700 font-bold rounded-full flex items-center justify-center text-sm">
@@ -683,7 +778,7 @@ export default function App() {
                       >
                         View patient profile
                       </button>
-                      {app.status !== 'Completed' ? (
+                      {doctorView !== 'completed' ? (
                         <>
                           <button
                             onClick={() => {
@@ -708,7 +803,28 @@ export default function App() {
                 ))}
               </div>
             )}
-          </div>
+          </div>}
+
+          {doctorView === 'calendar' && (
+            <section className="min-h-[calc(100vh-15rem)] rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-5 py-4 sm:px-6">
+                <div><h3 className="text-xl font-black text-slate-900">My calendar</h3><p className="mt-1 text-sm text-slate-500">Upcoming patient appointments</p></div>
+                <div className="flex flex-wrap items-center gap-2"><button onClick={() => moveCalendar(-1)} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100" title="Previous period" aria-label="Previous period"><ChevronLeft className="h-5 w-5" /></button><span className="min-w-52 text-center text-sm font-bold text-slate-800">{calendarRangeTitle}</span><button onClick={() => moveCalendar(1)} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100" title="Next period" aria-label="Next period"><ChevronRight className="h-5 w-5" /></button><button onClick={() => setCalendarDate(new Date())} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100">Today</button><div className="ml-1 flex rounded-lg bg-slate-100 p-1">{[['month', 'Month'], ['week', 'Week'], ['day', 'Day']].map(([mode, label]) => <button key={mode} onClick={() => setCalendarMode(mode)} className={`rounded-md px-3 py-1.5 text-xs font-bold ${calendarMode === mode ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>{label}</button>)}</div></div>
+              </div>
+              {calendarMode === 'month' && <><div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-center text-[11px] font-bold uppercase tracking-wider text-slate-500">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => <div key={day} className="py-3">{day}</div>)}</div><div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7">
+                {calendarDays.map((day, index) => {
+                  const dayAppointments = day ? appointmentsForDay(day) : [];
+                  const isToday = day && day.toDateString() === today.toDateString();
+                  return <div key={day ? day.toISOString() : `empty-${index}`} className={`min-h-36 border-b border-r border-slate-100 p-2 ${day ? 'bg-white' : 'hidden lg:block bg-slate-50/70'}`}>
+                    {day && <><div className={`mb-2 flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${isToday ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>{day.getDate()}</div><div className="space-y-2">{dayAppointments.map((app) => { const future = appointmentDate(app) >= startOfToday; return <button key={app.id} onClick={() => handleViewPatientProfile(app)} className={`w-full rounded-lg border p-2 text-left transition ${future ? 'border-emerald-100 bg-emerald-50 hover:border-emerald-300 hover:bg-emerald-100' : 'border-slate-200 bg-slate-100 hover:border-slate-300 hover:bg-slate-200'}`}><p className={`text-[11px] font-black ${future ? 'text-emerald-800' : 'text-slate-500'}`}>{app.time}</p><p className="mt-0.5 truncate text-xs font-semibold text-slate-800">{app.patientName}</p><p className="truncate text-[10px] text-slate-500">View medical card</p></button>; })}</div></>}
+                  </div>;
+                })}
+              </div></>}
+                {calendarMode === 'week' && <><div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-center text-[11px] font-bold uppercase tracking-wider text-slate-500">{calendarWeekDays.map((day) => <div key={day.toISOString()} className="py-3">{day.toLocaleDateString('en-US', { weekday: 'short' })}<span className="ml-1 text-slate-400">{day.getDate()}</span></div>)}</div><div className="grid min-h-[28rem] grid-cols-7">{calendarWeekDays.map((day) => <div key={day.toISOString()} className={`border-r border-slate-100 p-2 ${day.toDateString() === today.toDateString() ? 'bg-emerald-50/30' : ''}`}><div className="space-y-2">{appointmentsForDay(day).map((app) => { const future = appointmentDate(app) >= startOfToday; return <button key={app.id} onClick={() => handleViewPatientProfile(app)} className={`w-full rounded-lg border p-2 text-left ${future ? 'border-emerald-100 bg-emerald-50 hover:bg-emerald-100' : 'border-slate-200 bg-slate-100 hover:bg-slate-200'}`}><p className={`text-[11px] font-black ${future ? 'text-emerald-800' : 'text-slate-500'}`}>{app.time}</p><p className="truncate text-xs font-semibold text-slate-800">{app.patientName}</p></button>; })}</div></div>)}</div></>}
+              {calendarMode === 'day' && <div className="min-h-[28rem] bg-white p-4"><div className="mb-4 text-sm font-bold text-slate-700">{selectedCalendarDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</div>{selectedDayAppointments.length ? <div className="space-y-3">{selectedDayAppointments.map((app) => { const future = appointmentDate(app) >= startOfToday; return <button key={app.id} onClick={() => handleViewPatientProfile(app)} className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left ${future ? 'border-emerald-100 bg-emerald-50 hover:bg-emerald-100' : 'border-slate-200 bg-slate-100 hover:bg-slate-200'}`}><span className={`min-w-20 text-sm font-black ${future ? 'text-emerald-800' : 'text-slate-500'}`}>{app.time}</span><span><span className="block font-bold text-slate-800">{app.patientName}</span><span className="text-xs text-slate-500">View medical card</span></span></button>; })}</div> : <div className="rounded-xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-500">No appointments scheduled for this day.</div>}</div>}
+              {upcomingDoctorAppointments.length === 0 && <div className="p-10 text-center text-sm text-slate-500">No upcoming appointments are scheduled.</div>}
+            </section>
+          )}
         </main>
 
         {selectedPatientProfile && (
@@ -1002,6 +1118,22 @@ export default function App() {
                   ))
                 )}
               </div>
+
+              <div className="pt-4">
+                <h3 className="mb-3 text-lg font-bold text-slate-800">Completed consultations</h3>
+                {completedAppointments.length === 0 ? (
+                  <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">Completed consultations will appear here.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {completedAppointments.map((app) => (
+                      <div key={app.id} className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                        <div><h4 className="font-bold text-slate-800">{app.doctor}</h4><p className="text-xs text-slate-500">{app.spec} • {app.date} at {app.time}</p></div>
+                        {app.review_id ? <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">Reviewed: {app.review_rating}/5</span> : <button onClick={() => { setReviewAppointment(app); setReviewRating(5); setReviewComment(''); }} className="rounded-xl bg-amber-500 px-3 py-2 text-xs font-bold text-white hover:bg-amber-600">Leave review</button>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -1216,6 +1348,17 @@ export default function App() {
         </main>
       </div>
 
+      {reviewAppointment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
+          <form onSubmit={handleSubmitReview} className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4"><div><h2 className="text-xl font-black text-slate-900">Review your consultation</h2><p className="mt-1 text-sm text-slate-500">{reviewAppointment.doctor} • {reviewAppointment.spec}</p></div><button type="button" onClick={() => setReviewAppointment(null)} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button></div>
+            <label className="mt-5 block text-sm font-semibold text-slate-700">Rating<select value={reviewRating} onChange={(event) => setReviewRating(Number(event.target.value))} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"><option value="5">5 - Excellent</option><option value="4">4 - Very good</option><option value="3">3 - Good</option><option value="2">2 - Needs improvement</option><option value="1">1 - Poor</option></select></label>
+            <label className="mt-4 block text-sm font-semibold text-slate-700">Comment<textarea value={reviewComment} onChange={(event) => setReviewComment(event.target.value)} rows={4} maxLength={2000} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 font-normal" placeholder="Share your experience (optional)" /></label>
+            <button type="submit" className="mt-5 w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-bold text-white hover:bg-amber-600">Submit review</button>
+          </form>
+        </div>
+      )}
+
       {pdfPreviewHtml && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6">
           <div className="flex h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -1306,7 +1449,7 @@ export default function App() {
                           </div>
                           <div>
                             <h4 className="font-bold text-slate-800 text-sm group-hover:text-emerald-600">{doc.name}</h4>
-                            <p className="text-xs text-slate-500">{doc.location} • Experience {doc.experience}</p>
+                            <p className="text-xs text-slate-500">{doc.location} • Experience {doc.experience} • Rating {Number(doc.rating_average || 0).toFixed(1)}/5 ({doc.rating_count || 0})</p>
                           </div>
                         </div>
                         <ChevronRight className="w-5 h-5 text-slate-400 shrink-0" />
