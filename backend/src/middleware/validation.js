@@ -32,6 +32,11 @@ export const registerSchema = z.object({
 export const patientIdParamsSchema = z.object({ patientId: uuid }).strict();
 export const doctorIdParamsSchema = z.object({ doctorId: uuid }).strict();
 export const medicalRecordIdParamsSchema = z.object({ recordId: uuid }).strict();
+export const reviewSchema = z.object({
+  appointment_id: uuid,
+  rating: z.coerce.number().int().min(1).max(5),
+  comment: z.string().trim().max(2000).optional().or(z.literal('')),
+}).strict();
 
 export const profileSchema = z.object({
   fullName: nonEmptyText(100),
