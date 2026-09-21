@@ -104,16 +104,33 @@ async function seed() {
       const doctorId = uuidFor('doctor', doctorNumber);
       const passwordHash = await bcrypt.hash(doctorPassword(doctorNumber), 10);
       const price = row.price_per_consultation_mdl || row.price_per_consultation;
+      const parsedExperienceYears = integerOr(row.experience_years, 0);
+      const experienceYears = parsedExperienceYears > 0 ? parsedExperienceYears : 5 + (doctorNumber % 12);
+      const parsedRating = Number(row.rating_avg);
+      const initialRating = Number.isFinite(parsedRating) && parsedRating > 0 ? parsedRating : 4.0 + ((doctorNumber % 10) / 10);
       await client.query(`INSERT INTO users (id, email, phone, password_hash, role, full_name)
         VALUES ($1, $2, $3, $4, 'doctor', $5)
         ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, phone = EXCLUDED.phone,
         password_hash = EXCLUDED.password_hash, full_name = EXCLUDED.full_name`,
         [userId, `doctor.${doctorNumber}@fafcare.local`, row.phone, passwordHash, row.full_name]);
-      await client.query(`INSERT INTO doctors (id, user_id, specialty_id, experience_years, price_per_consultation)
-        VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET specialty_id = EXCLUDED.specialty_id,
-        experience_years = EXCLUDED.experience_years, price_per_consultation = EXCLUDED.price_per_consultation`,
-        [doctorId, userId, integerOr(row.specialty_id, null), integerOr(row.experience_years), price]);
+      await client.query(`INSERT INTO doctors (id, user_id, specialty_id, experience_years, price_per_consultation, rating_average)
+        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE SET specialty_id = EXCLUDED.specialty_id,
+        experience_years = EXCLUDED.experience_years, price_per_consultation = EXCLUDED.price_per_consultation,
+        rating_average = CASE WHEN doctors.rating_count = 0 THEN EXCLUDED.rating_average ELSE doctors.rating_average END`,
+        [doctorId, userId, integerOr(row.specialty_id, null), experienceYears, price, initialRating]);
     }
+
+    await client.query(`
+      WITH ordered_doctors AS (
+        SELECT d.id, ROW_NUMBER() OVER (ORDER BY u.full_name) AS doctor_number
+        FROM doctors d JOIN users u ON u.id = d.user_id
+      )
+      UPDATE doctors d
+      SET experience_years = 5 + (ordered_doctors.doctor_number::int % 12),
+          rating_average = CASE WHEN d.rating_count = 0 THEN 4.0 + ((ordered_doctors.doctor_number::int % 10) / 10.0) ELSE d.rating_average END
+      FROM ordered_doctors
+      WHERE d.id = ordered_doctors.id AND (d.experience_years <= 0 OR (d.rating_count = 0 AND d.rating_average <= 0))
+    `);
 
     const adminPasswordHash = await bcrypt.hash(adminPassword(), 10);
     await client.query(`INSERT INTO users (id, email, phone, password_hash, role, full_name)

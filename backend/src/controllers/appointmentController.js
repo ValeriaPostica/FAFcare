@@ -9,13 +9,15 @@ const appointmentSelect = `
              AND mr.created_at >= a.scheduled_at
          ) THEN 'completed' ELSE a.status END AS status,
          a.scheduled_at, a.price, pu.full_name AS patient_name,
-         du.full_name AS doctor, s.name AS spec
+         du.full_name AS doctor, s.name AS spec,
+         dr.id AS review_id, dr.rating AS review_rating, dr.comment AS review_comment
   FROM appointments a
   JOIN patients p ON p.id = a.patient_id
   JOIN users pu ON pu.id = p.user_id
   JOIN doctors d ON d.id = a.doctor_id
   JOIN users du ON du.id = d.user_id
   LEFT JOIN specialties s ON s.id = d.specialty_id
+  LEFT JOIN doctor_reviews dr ON dr.appointment_id = a.id
 `;
 
 export async function listAppointments(req, res, next) {
