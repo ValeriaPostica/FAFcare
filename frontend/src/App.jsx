@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { 
   Activity, Calendar, FileText, Pill, User, LogOut, PlusCircle, ArrowLeft, ChevronLeft, ChevronRight,
   Mail, Lock, Phone, Eye, EyeOff, ShieldCheck, CheckCircle2, Clock, 
@@ -216,6 +217,7 @@ export default function App() {
     }
   });
   const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('overview');
   const [bookletSection, setBookletSection] = useState('profile');
   const [illnessSearch, setIllnessSearch] = useState('');
   const [illnessCategory, setIllnessCategory] = useState('all');
@@ -226,6 +228,7 @@ export default function App() {
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
   const [profileSurveyData, setProfileSurveyData] = useState({
+    fullName: '', birthDate: '', insuranceType: '', bloodType: '', allergies: '', chronicConditions: '',
     fullName: '', birthDate: '', insuranceType: '', bloodType: '', allergies: '', chronicConditions: '',
   });
 
@@ -246,6 +249,7 @@ export default function App() {
 
   // Booking
   const [isBookingOpen, setIsBookingOpen] = useState(false);
+  const [bookingStep, setBookingStep] = useState(1);
   const [bookingStep, setBookingStep] = useState(1);
   const [selectedSpec, setSelectedSpec] = useState(null);
   const [selectedDoctor, setSelectedDoctor] = useState(null);
@@ -271,15 +275,22 @@ export default function App() {
 
   const availableTimeSlots = ['09:00 AM', '10:30 AM', '01:15 PM', '03:00 PM', '04:30 PM'];
 
-  /* ---------------------------------------------------------------------
-     UTILS
-  --------------------------------------------------------------------- */
   const to24Hour = (time) => {
     const [clock, meridiem] = time.split(' ');
     let [hours, minutes] = clock.split(':').map(Number);
     if (meridiem === 'PM' && hours !== 12) hours += 12;
     if (meridiem === 'AM' && hours === 12) hours = 0;
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+  };
+
+  const formatTimeDisplay = (t) => {
+    if (!t) return '';
+    const norm = normalizeTime(t);
+    const [h, m] = norm.split(':').map(Number);
+    if (isNaN(h)) return t;
+    const meridiem = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${meridiem}`;
   };
 
   const api = async (path, options = {}) => {
@@ -315,6 +326,8 @@ export default function App() {
       }
       if (response.status === 403) throw new Error(`Access denied: ${serverMessage}`);
       if (response.status === 409) throw new Error(`Conflict: ${serverMessage}`);
+      if (response.status === 403) throw new Error(`Access denied: ${serverMessage}`);
+      if (response.status === 409) throw new Error(`Conflict: ${serverMessage}`);
       throw new Error(serverMessage);
     }
     return body;
@@ -326,7 +339,7 @@ export default function App() {
     setCurrentUser(null);
   };
 
-  const loadAppointments = async (user = currentUser) => {
+  const loadAppointments = useCallback(async (user = currentUser) => {
     if (!user) return;
     const query = user.role === 'Doctor' ? `doctor_id=${user.doctor_id}` : user.role === 'Patient' ? `patient_id=${user.patient_id}` : '';
     const rows = await api(`/appointments?${query}`);
@@ -458,10 +471,7 @@ export default function App() {
   const handleVerifyMfa = async (e) => {
     e.preventDefault();
     try {
-      const authResponse = await api('/auth/verify-mfa', {
-        method: 'POST',
-        body: JSON.stringify({ mfaToken, otpCode }),
-      });
+      const authResponse = await api('/auth/verify-mfa', { method: 'POST', body: JSON.stringify({ mfaToken, otpCode }) });
       localStorage.setItem('accessToken', authResponse.token);
       const authenticatedUser = { ...authResponse.user, avatarColor: 'bg-emerald-600' };
       localStorage.setItem('currentUser', JSON.stringify(authenticatedUser));
@@ -626,6 +636,7 @@ export default function App() {
   const bookletPatient = booklet?.patient || {};
   const formatDate = (value) => value ? new Date(value).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : 'Not recorded';
 
+
   const getIllnessCategory = (record) => {
     if (record.diagnosis_type) return String(record.diagnosis_type).toLowerCase();
     if (record.category) return String(record.category).toLowerCase();
@@ -757,6 +768,13 @@ export default function App() {
                   </div>
                 </div>
 
+                <div className="p-8">
+                  {notification && (
+                    <div className="fc-rise mb-6 flex items-start gap-2.5 rounded-xl border border-emerald-200/70 bg-emerald-50/80 p-3.5 text-sm text-emerald-800">
+                      <CheckCircle2 className="mt-px h-4 w-4 shrink-0 text-emerald-600" />
+                      <span className="leading-relaxed">{notification}</span>
+                    </div>
+                  )}
                 <div className="p-8">
                   {notification && (
                     <div className="fc-rise mb-6 flex items-start gap-2.5 rounded-xl border border-emerald-200/70 bg-emerald-50/80 p-3.5 text-sm text-emerald-800">
