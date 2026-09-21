@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS doctors (
     price_per_consultation DECIMAL(10, 2)
 );
 
+ALTER TABLE doctors ADD COLUMN IF NOT EXISTS rating_average NUMERIC(3, 2) NOT NULL DEFAULT 0;
+ALTER TABLE doctors ADD COLUMN IF NOT EXISTS rating_count INT NOT NULL DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS patient_access_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     doctor_id UUID NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
@@ -86,6 +89,19 @@ CREATE TABLE IF NOT EXISTS appointments (
     price DECIMAL(10, 2),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS doctor_reviews (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    doctor_id UUID NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
+    patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    appointment_id UUID NOT NULL UNIQUE REFERENCES appointments(id) ON DELETE CASCADE,
+    rating INT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    comment TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS doctor_reviews_doctor_idx
+    ON doctor_reviews (doctor_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS conversations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
