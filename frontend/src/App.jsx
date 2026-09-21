@@ -1,16 +1,15 @@
-import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { 
-  Activity, Calendar, FileText, Pill, User, LogOut, PlusCircle, ArrowLeft, ChevronLeft, ChevronRight,
-  Mail, Lock, Phone, Eye, EyeOff, ShieldCheck, CheckCircle2, Clock, 
-  Download, Heart, Droplets, Thermometer, Plus, X, Stethoscope, 
+  Activity, Calendar, FileText, Pill, User, LogOut, ArrowLeft, ChevronLeft, ChevronRight,
+  Mail, Lock, Eye, EyeOff, ShieldCheck, CheckCircle2, Clock, 
+  Heart, Droplets, Thermometer, Plus, X, Stethoscope, 
   Building, Check, Users, History, FileCheck, Printer, Search, RefreshCw,
-  TrendingUp, AlertCircle, ClipboardList, UserCheck, CalendarClock, Star,
+  TrendingUp, ClipboardList, UserCheck, CalendarClock, Star,
   Award, MessageSquare, BarChart3, PieChart
 } from 'lucide-react';
 
 /* -------------------------------------------------------------------------
-   FAF Logo — exact SVG replica. Both F's are identical (not mirrored).
+   FAF Logo
 ------------------------------------------------------------------------- */
 const FafLogo = ({ className = 'h-9 w-9', dark = true }) => (
   <svg viewBox="0 0 200 200" className={className} aria-hidden="true" role="img" preserveAspectRatio="xMidYMid meet">
@@ -25,7 +24,7 @@ const FafLogo = ({ className = 'h-9 w-9', dark = true }) => (
 );
 
 /* -------------------------------------------------------------------------
-   Star rating (read-only + interactive)
+   Star rating
 ------------------------------------------------------------------------- */
 const StarRating = ({ value = 0, onChange = null, size = 'md', showValue = false, count = null }) => {
   const sizeMap = { sm: 'h-3.5 w-3.5', md: 'h-4 w-4', lg: 'h-5 w-5' };
@@ -188,10 +187,43 @@ const GlobalStyles = () => (
   `}</style>
 );
 
+/* -------------------------------------------------------------------------
+   Time helpers
+------------------------------------------------------------------------- */
+const normalizeTime = (raw) => {
+  if (!raw) return '';
+  let s = String(raw).trim();
+  if (s.includes('T')) s = s.split('T')[1];
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
+  if (!m) return s;
+  let hours = Number(m[1]);
+  const minutes = m[2];
+  const meridiem = (m[3] || '').toUpperCase();
+  if (meridiem === 'PM' && hours !== 12) hours += 12;
+  if (meridiem === 'AM' && hours === 12) hours = 0;
+  return `${String(hours).padStart(2, '0')}:${minutes}`;
+};
+
+const formatTimeDisplay = (t) => {
+  if (!t) return '';
+  const norm = normalizeTime(t);
+  const [h, m] = norm.split(':').map(Number);
+  if (isNaN(h)) return t;
+  const meridiem = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${meridiem}`;
+};
+
+const to24Hour = (time) => {
+  const [clock, meridiem] = time.split(' ');
+  let [hours, minutes] = clock.split(':').map(Number);
+  if (meridiem === 'PM' && hours !== 12) hours += 12;
+  if (meridiem === 'AM' && hours === 12) hours = 0;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+};
+
 export default function App() {
-  /* ---------------------------------------------------------------------
-     STATE
-  --------------------------------------------------------------------- */
+  /* ---------- STATE ---------- */
   const [specialties, setSpecialties] = useState([]);
   const [doctorsList, setDoctorsList] = useState([]);
   const [appointments, setAppointments] = useState([]);
@@ -202,7 +234,6 @@ export default function App() {
   const [pdfPreviewHtml, setPdfPreviewHtml] = useState(null);
   const [adminRefreshing, setAdminRefreshing] = useState(false);
 
-  // Auth & navigation
   const [authView, setAuthView] = useState('login');
   const [authStep, setAuthStep] = useState('credentials');
   const [mfaToken, setMfaToken] = useState('');
@@ -217,7 +248,6 @@ export default function App() {
     }
   });
   const [activeTab, setActiveTab] = useState('overview');
-  const [activeTab, setActiveTab] = useState('overview');
   const [bookletSection, setBookletSection] = useState('profile');
   const [illnessSearch, setIllnessSearch] = useState('');
   const [illnessCategory, setIllnessCategory] = useState('all');
@@ -227,12 +257,11 @@ export default function App() {
   const [reviewAppointment, setReviewAppointment] = useState(null);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
+
   const [profileSurveyData, setProfileSurveyData] = useState({
-    fullName: '', birthDate: '', insuranceType: '', bloodType: '', allergies: '', chronicConditions: '',
     fullName: '', birthDate: '', insuranceType: '', bloodType: '', allergies: '', chronicConditions: '',
   });
 
-  // Symptom checker
   const [isSymptomCheckerOpen, setIsSymptomCheckerOpen] = useState(false);
   const [symptomStep, setSymptomStep] = useState(1);
   const [selectedSymptom, setSelectedSymptom] = useState(null);
@@ -247,16 +276,13 @@ export default function App() {
     { id: 'ortho', label: 'Joint & Muscle Pain', zone: 'Limbs & Back', keyword: 'ortho', desc: 'Movement difficulty, joint inflammation' },
   ];
 
-  // Booking
   const [isBookingOpen, setIsBookingOpen] = useState(false);
-  const [bookingStep, setBookingStep] = useState(1);
   const [bookingStep, setBookingStep] = useState(1);
   const [selectedSpec, setSelectedSpec] = useState(null);
   const [selectedDoctor, setSelectedDoctor] = useState(null);
   const [selectedDate, setSelectedDate] = useState('2026-09-15');
   const [selectedTime, setSelectedTime] = useState('10:00 AM');
 
-  // Doctor completion
   const [isCompleteModalOpen, setIsCompleteModalOpen] = useState(false);
   const [selectedAppointmentToComplete, setSelectedAppointmentToComplete] = useState(null);
   const [selectedPatientProfile, setSelectedPatientProfile] = useState(null);
@@ -275,24 +301,7 @@ export default function App() {
 
   const availableTimeSlots = ['09:00 AM', '10:30 AM', '01:15 PM', '03:00 PM', '04:30 PM'];
 
-  const to24Hour = (time) => {
-    const [clock, meridiem] = time.split(' ');
-    let [hours, minutes] = clock.split(':').map(Number);
-    if (meridiem === 'PM' && hours !== 12) hours += 12;
-    if (meridiem === 'AM' && hours === 12) hours = 0;
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
-  };
-
-  const formatTimeDisplay = (t) => {
-    if (!t) return '';
-    const norm = normalizeTime(t);
-    const [h, m] = norm.split(':').map(Number);
-    if (isNaN(h)) return t;
-    const meridiem = h >= 12 ? 'PM' : 'AM';
-    const h12 = h % 12 === 0 ? 12 : h % 12;
-    return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${meridiem}`;
-  };
-
+  /* ---------- API ---------- */
   const api = async (path, options = {}) => {
     const { silent, ...fetchOptions } = options;
     const token = localStorage.getItem('accessToken');
@@ -326,8 +335,6 @@ export default function App() {
       }
       if (response.status === 403) throw new Error(`Access denied: ${serverMessage}`);
       if (response.status === 409) throw new Error(`Conflict: ${serverMessage}`);
-      if (response.status === 403) throw new Error(`Access denied: ${serverMessage}`);
-      if (response.status === 409) throw new Error(`Conflict: ${serverMessage}`);
       throw new Error(serverMessage);
     }
     return body;
@@ -351,11 +358,9 @@ export default function App() {
       location: 'FAFCare clinic',
       status: row.status ? row.status.charAt(0).toUpperCase() + row.status.slice(1).toLowerCase() : 'Scheduled',
     })));
-  };
+  }, [currentUser]);
 
-  /* ---------------------------------------------------------------------
-     EFFECTS
-  --------------------------------------------------------------------- */
+  /* ---------- EFFECTS ---------- */
   useEffect(() => {
     Promise.all([api('/specialties'), api('/doctors')])
       .then(([remoteSpecialties, remoteDoctors]) => {
@@ -365,7 +370,7 @@ export default function App() {
       .catch((error) => setNotification(`API unavailable: ${error.message}`));
   }, []);
 
-  useEffect(() => { loadAppointments().catch(() => {}); }, [currentUser]);
+  useEffect(() => { loadAppointments().catch(() => {}); }, [loadAppointments]);
 
   useEffect(() => {
     if (currentUser?.role !== 'Doctor') {
@@ -402,9 +407,7 @@ export default function App() {
       .finally(() => setBookletLoading(false));
   }, [currentUser]);
 
-  /* ---------------------------------------------------------------------
-     HANDLERS
-  --------------------------------------------------------------------- */
+  /* ---------- HANDLERS ---------- */
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
   const handleProfileSurveyChange = (e) => setProfileSurveyData({ ...profileSurveyData, [e.target.name]: e.target.value });
 
@@ -625,9 +628,7 @@ export default function App() {
     }
   };
 
-  /* ---------------------------------------------------------------------
-     DERIVED
-  --------------------------------------------------------------------- */
+  /* ---------- DERIVED ---------- */
   const userAppointments = appointments.filter(a => a.patientName === currentUser?.fullName);
   const upcomingAppointments = userAppointments.filter(a => a.status !== 'Completed');
   const completedAppointments = userAppointments.filter(a => a.status === 'Completed');
@@ -635,7 +636,6 @@ export default function App() {
   const activePrescriptions = booklet?.active_prescriptions || [];
   const bookletPatient = booklet?.patient || {};
   const formatDate = (value) => value ? new Date(value).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : 'Not recorded';
-
 
   const getIllnessCategory = (record) => {
     if (record.diagnosis_type) return String(record.diagnosis_type).toLowerCase();
@@ -684,9 +684,7 @@ export default function App() {
     return bookletHtml;
   };
 
-  /* ---------------------------------------------------------------------
-     SHARED CLASSES
-  --------------------------------------------------------------------- */
+  /* ---------- SHARED CLASSES ---------- */
   const inputClass = 'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)] outline-none transition-all duration-200 ease-in-out hover:border-slate-300 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10';
   const labelClass = 'mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500';
   const primaryButtonClass = 'group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-[0_1px_2px_rgba(15,23,42,0.08),0_10px_22px_-12px_rgba(5,150,105,0.9)] ring-1 ring-inset ring-white/20 transition-all duration-200 ease-in-out hover:from-emerald-500 hover:to-emerald-700 hover:shadow-[0_2px_4px_rgba(15,23,42,0.1),0_16px_30px_-14px_rgba(5,150,105,0.95)] active:scale-[0.99]';
@@ -768,13 +766,6 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="p-8">
-                  {notification && (
-                    <div className="fc-rise mb-6 flex items-start gap-2.5 rounded-xl border border-emerald-200/70 bg-emerald-50/80 p-3.5 text-sm text-emerald-800">
-                      <CheckCircle2 className="mt-px h-4 w-4 shrink-0 text-emerald-600" />
-                      <span className="leading-relaxed">{notification}</span>
-                    </div>
-                  )}
                 <div className="p-8">
                   {notification && (
                     <div className="fc-rise mb-6 flex items-start gap-2.5 rounded-xl border border-emerald-200/70 bg-emerald-50/80 p-3.5 text-sm text-emerald-800">
@@ -946,12 +937,12 @@ export default function App() {
   }
 
   /* =========================================================================
-     3. ADMIN DASHBOARD (full charts)
+     3. ADMIN DASHBOARD
      ========================================================================= */
   if (currentUser.role === 'Admin') {
     const totalAppointments = appointments.length;
-    const completedAppointments = appointments.filter(a => a.status === 'Completed').length;
-    const upcomingAppointments = totalAppointments - completedAppointments;
+    const adminCompletedAppointments = appointments.filter(a => a.status === 'Completed').length;
+    const adminUpcomingAppointments = totalAppointments - adminCompletedAppointments;
     const uniquePatients = new Set(appointments.map(a => a.patientName)).size;
     const uniqueDoctors = new Set(appointments.map(a => a.doctor)).size;
 
@@ -1105,8 +1096,8 @@ export default function App() {
 
             <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
               {[
-                { label: 'Completed consultations', value: completedAppointments, icon: UserCheck, tint: 'bg-emerald-50 text-emerald-600 ring-emerald-100', trend: 'Signed off' },
-                { label: 'Upcoming consultations', value: upcomingAppointments, icon: CalendarClock, tint: 'bg-teal-50 text-teal-700 ring-teal-100', trend: 'In pipeline' },
+                { label: 'Completed consultations', value: adminCompletedAppointments, icon: UserCheck, tint: 'bg-emerald-50 text-emerald-600 ring-emerald-100', trend: 'Signed off' },
+                { label: 'Upcoming consultations', value: adminUpcomingAppointments, icon: CalendarClock, tint: 'bg-teal-50 text-teal-700 ring-teal-100', trend: 'In pipeline' },
                 { label: 'Active doctors', value: uniqueDoctors, icon: Stethoscope, tint: 'bg-slate-100 text-slate-700 ring-slate-200', trend: `of ${doctorsList.length} registered` },
               ].map(({ label, value, icon: Icon, tint, trend }) => (
                 <div key={label} className={`${surfaceClass} group relative overflow-hidden p-6 transition-all duration-200 ease-in-out hover:-translate-y-0.5`}>
@@ -1972,7 +1963,7 @@ export default function App() {
                           <h4 className="text-[15px] font-semibold text-slate-900">{nextAppointment.doctor}</h4>
                           <p className="mt-0.5 text-xs text-slate-500">{nextAppointment.spec}</p>
                           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-600">
-                            <span className="tnum inline-flex items-center gap-1.5"><Clock className="h-3.5 w-3.5 text-slate-400" /> {nextAppointment.date} · {nextAppointment.time}</span>
+                            <span className="tnum inline-flex items-center gap-1.5"><Clock className="h-3.5 w-3.5 text-slate-400" /> {nextAppointment.date} · {formatTimeDisplay(nextAppointment.time)}</span>
                             <span className="inline-flex items-center gap-1.5"><Building className="h-3.5 w-3.5 text-slate-400" /> {nextAppointment.location}</span>
                           </div>
                         </div>
@@ -2103,7 +2094,7 @@ export default function App() {
                               <h4 className="text-[15px] font-semibold text-slate-900">{app.doctor}</h4>
                               <p className="mt-0.5 text-xs text-slate-500">{app.spec}</p>
                               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
-                                <span className="tnum inline-flex items-center gap-1.5"><Clock className="h-3.5 w-3.5 text-slate-400" /> {app.date} · {app.time}</span>
+                                <span className="tnum inline-flex items-center gap-1.5"><Clock className="h-3.5 w-3.5 text-slate-400" /> {app.date} · {formatTimeDisplay(app.time)}</span>
                                 <span className="inline-flex items-center gap-1.5"><Building className="h-3.5 w-3.5 text-slate-400" /> {app.location}</span>
                               </div>
                             </div>
@@ -2130,7 +2121,7 @@ export default function App() {
                               <h4 className="text-[15px] font-semibold text-slate-900">{app.doctor}</h4>
                               <p className="mt-0.5 text-xs text-slate-500">{app.spec}</p>
                               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
-                                <span className="tnum inline-flex items-center gap-1.5"><Clock className="h-3.5 w-3.5 text-slate-400" /> {app.date} · {app.time}</span>
+                                <span className="tnum inline-flex items-center gap-1.5"><Clock className="h-3.5 w-3.5 text-slate-400" /> {app.date} · {formatTimeDisplay(app.time)}</span>
                               </div>
                             </div>
                           </div>
