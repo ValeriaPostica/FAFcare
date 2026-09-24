@@ -85,7 +85,7 @@ export async function createAppointment(req, res, next) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'Schedule slot is already booked' });
     }
-
+/*
     const matchingTime = await client.query(
       'SELECT ($1::timestamp = ($2::date + $3::time)) AS matches',
       [scheduled_at, slot.date, slot.start_time]
@@ -94,7 +94,7 @@ export async function createAppointment(req, res, next) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'scheduled_at must match the selected schedule slot' });
     }
-
+*/
     const updatedSlot = await client.query(
       'UPDATE doctor_schedules SET is_available = FALSE WHERE id = $1 AND is_available = TRUE RETURNING id',
       [schedule_slot_id]
@@ -103,7 +103,7 @@ export async function createAppointment(req, res, next) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'Schedule slot is already booked' });
     }
-
+    const calculatedScheduledAt = `${slot.date.toISOString().slice(0, 10)}T${slot.start_time}`;
     const appointmentResult = await client.query(`
       INSERT INTO appointments (patient_id, doctor_id, schedule_slot_id, appointment_type, scheduled_at, price)
       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
