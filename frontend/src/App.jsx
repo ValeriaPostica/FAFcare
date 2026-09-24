@@ -535,22 +535,31 @@ export default function App() {
     }
   };
 
-  const handleConfirmBooking = async () => {
-    const slot = await api(`/doctors/${selectedDoctor.id}/schedules`);
-    const selectedSlot = slot.find((item) => item.date.toString().slice(0, 10) === selectedDate) || slot[0];
-    await api('/appointments', { method: 'POST', body: JSON.stringify({
-      patient_id: currentUser.patient_id, doctor_id: selectedDoctor.id, schedule_slot_id: selectedSlot?.id,
-      appointment_type: 'offline', scheduled_at: `${selectedDate}T${to24Hour(selectedTime)}`, price: selectedDoctor.price_per_consultation,
-    }) });
-    await loadAppointments(currentUser);
-    setIsBookingOpen(false);
-    setBookingStep(1);
-    setSelectedSpec(null);
-    setSelectedDoctor(null);
-    setActiveTab('appointments');
-    setNotification('Your appointment was booked successfully!');
-    setTimeout(() => setNotification(null), 4000);
-  };
+// Finish booking
+const handleConfirmBooking = async () => {
+  const slot = await api(`/doctors/${selectedDoctor.id}/schedules`);
+  const selectedSlot = slot.find((item) => item.date.toString().slice(0, 10) === selectedDate) || slot[0];
+
+  await api('/appointments', { 
+    method: 'POST', 
+    body: JSON.stringify({
+      patient_id: currentUser.patient_id, 
+      doctor_id: selectedDoctor.id, 
+      schedule_slot_id: selectedSlot?.id,
+      appointment_type: 'offline', 
+      scheduled_at: `${selectedDate}T${to24Hour(selectedTime)}`,
+    }) 
+  });
+
+  await loadAppointments(currentUser);
+  setIsBookingOpen(false);
+  setBookingStep(1);
+  setSelectedSpec(null);
+  setSelectedDoctor(null);
+  setActiveTab('appointments');
+  setNotification('Your appointment was booked successfully!');
+  setTimeout(() => setNotification(null), 4000);
+};
 
   const handleSaveConsultationCompletion = async (e) => {
     e.preventDefault();
