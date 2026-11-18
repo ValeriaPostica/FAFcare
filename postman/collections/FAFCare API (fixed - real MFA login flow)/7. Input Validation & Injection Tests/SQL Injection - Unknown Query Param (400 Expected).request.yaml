@@ -1,0 +1,13 @@
+$kind: http-request
+name: SQL Injection / Unknown Query Param (400 Expected)
+url: "{{base_url}}/api/appointments?status=confirmed' OR '1'='1"
+method: GET
+headers:
+  Authorization: Bearer {{patient_jwt}}
+queryParams:
+  status: confirmed' OR '1'='1
+scripts:
+  - type: afterResponse
+    code: pm.test("Rejected by strict query schema (400)", () => pm.response.to.have.status(400));
+    language: text/javascript
+order: 3000

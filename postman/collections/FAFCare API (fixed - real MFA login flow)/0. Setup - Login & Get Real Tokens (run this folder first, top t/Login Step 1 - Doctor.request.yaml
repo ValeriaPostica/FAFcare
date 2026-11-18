@@ -1,0 +1,32 @@
+$kind: http-request
+url: "{{base_url}}/api/auth/login"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "{{doctor_email}}",
+      "password": "{{doctor_password}}"
+    }
+scripts:
+  - type: beforeRequest
+    code: pm.environment.set('doctor_password', (pm.environment.get('seed_password') || 'Password123!') + '-Doctor-' + pm.environment.get('doctor_csv_id') + '!');
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Login step 1 returns 200 (credentials accepted)', () => pm.response.to.have.status(200));
+      if (pm.response.code === 200) {
+          const json = pm.response.json();
+          pm.environment.set('doctor_mfa_token', json.mfaToken);
+          if (json.otpCode) {
+              pm.environment.set('doctor_otp', json.otpCode);
+          } else {
+              console.warn('Doctor: no otpCode in response. Set MFA_RETURN_OTP=true in the backend .env for automated Postman testing, or copy the 6-digit code the backend logs to its console and paste it into the doctor_otp environment variable by hand, then re-run the Verify MFA request.');
+          }
+      } else {
+          console.error('Doctor login step 1 failed:', pm.response.text());
+      }
+    language: text/javascript
+order: 5000

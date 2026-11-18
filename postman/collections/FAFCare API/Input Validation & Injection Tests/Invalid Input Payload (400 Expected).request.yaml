@@ -1,0 +1,18 @@
+$kind: http-request
+url: "{{base_url}}/api/appointments"
+method: POST
+headers:
+  Authorization: Bearer {{patient_jwt}}
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "doctor_id": 12345,
+      "appointment_type": 12345
+    }
+scripts:
+  - type: afterResponse
+    code: pm.test('Status is 400 or 401', () => pm.expect(pm.response.code).to.be.oneOf([400, 401]));
+    language: text/javascript
+order: 1000

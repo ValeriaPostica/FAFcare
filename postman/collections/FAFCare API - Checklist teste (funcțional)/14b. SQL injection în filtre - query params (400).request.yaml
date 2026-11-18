@@ -1,0 +1,13 @@
+$kind: http-request
+name: 14b. SQL injection în filtre / query params (400)
+url: "{{base_url}}/api/appointments?status=confirmed' OR '1'='1"
+method: GET
+headers:
+  Authorization: Bearer {{patient_jwt}}
+queryParams:
+  status: confirmed' OR '1'='1
+scripts:
+  - type: afterResponse
+    code: pm.test("Status 400 - respins de schema strictă de query params", () => pm.response.to.have.status(400));
+    language: text/javascript
+order: 23000

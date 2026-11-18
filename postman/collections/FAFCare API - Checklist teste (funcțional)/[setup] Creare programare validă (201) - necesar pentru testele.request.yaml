@@ -1,0 +1,29 @@
+$kind: http-request
+name: "[setup] Creare programare validă (201) - necesar pentru testele de conflict de slot"
+url: "{{base_url}}/api/appointments"
+method: POST
+headers:
+  Content-Type: application/json
+  Authorization: Bearer {{patient_jwt}}
+body:
+  type: json
+  content: |-
+    {
+      "doctor_id": "{{doctor_id}}",
+      "schedule_slot_id": "{{schedule_slot_id}}",
+      "appointment_type": "offline",
+      "scheduled_at": "{{scheduled_at}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status 201', () => pm.response.to.have.status(201));
+      if (pm.response.code === 201) {
+          const json = pm.response.json();
+          pm.environment.set('appointment_id', json.id);
+          pm.environment.set('taken_slot_id', pm.environment.get('schedule_slot_id'));
+      } else {
+          console.error('Creare programare eșuată:', pm.response.text());
+      }
+    language: text/javascript
+order: 17000

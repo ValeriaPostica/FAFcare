@@ -1,0 +1,18 @@
+$kind: http-request
+url: "{{base_url}}/api/doctors/{{doctor2_id}}/schedules"
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status 200', () => pm.response.to.have.status(200));
+      const rows = pm.response.json();
+      if (Array.isArray(rows) && rows.length > 0) {
+          const slot = rows[0];
+          const datePart = String(slot.date).slice(0, 10);
+          pm.environment.set('doctor2_schedule_slot_id', slot.id);
+          pm.environment.set('doctor2_scheduled_at', datePart + 'T' + slot.start_time);
+      } else {
+          console.warn('Doctor 2 has no available schedule slots seeded.');
+      }
+    language: text/javascript
+order: 4000

@@ -1,0 +1,10 @@
+$kind: http-request
+url: "{{base_url}}/api/patients/{{other_patient_id}}/medical-records"
+method: GET
+headers:
+  Authorization: Bearer {{patient_jwt}}
+scripts:
+  - type: afterResponse
+    code: pm.test('Status is 403, 404, or 401', () => pm.expect(pm.response.code).to.be.oneOf([403, 404, 401]));
+    language: text/javascript
+order: 3000

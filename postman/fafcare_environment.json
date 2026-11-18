@@ -1,0 +1,152 @@
+{
+  "id": "fafcare-api-checklist-env",
+  "name": "FAFCare API Environment (checklist)",
+  "values": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000",
+      "enabled": true
+    },
+    {
+      "key": "seed_password",
+      "value": "Password123!",
+      "enabled": true
+    },
+    {
+      "key": "patient_email",
+      "value": "tatiana.braga1@example.md",
+      "enabled": true
+    },
+    {
+      "key": "patient_csv_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "patient_password",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "patient_mfa_token",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "patient_otp",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "patient_jwt",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "jwt_token",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "patient_id",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "other_patient_email",
+      "value": "vitalie.guzun2@example.md",
+      "enabled": true
+    },
+    {
+      "key": "other_patient_csv_id",
+      "value": "2",
+      "enabled": true
+    },
+    {
+      "key": "other_patient_password",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "other_patient_mfa_token",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "other_patient_otp",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "other_patient_jwt",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "other_patient_id",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "doctor_email",
+      "value": "doctor.1@fafcare.local",
+      "enabled": true
+    },
+    {
+      "key": "doctor_csv_id",
+      "value": "1",
+      "enabled": true
+    },
+    {
+      "key": "doctor_password",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "doctor_mfa_token",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "doctor_otp",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "doctor_jwt",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "doctor_id",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "schedule_slot_id",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "scheduled_at",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "appointment_id",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "taken_slot_id",
+      "value": "",
+      "enabled": true
+    },
+    {
+      "key": "garbage_token",
+      "value": "not.a.realtoken",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment"
+}

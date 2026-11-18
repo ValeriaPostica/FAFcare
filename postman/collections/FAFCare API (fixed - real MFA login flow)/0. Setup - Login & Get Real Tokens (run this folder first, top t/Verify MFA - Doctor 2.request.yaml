@@ -1,0 +1,27 @@
+$kind: http-request
+url: "{{base_url}}/api/auth/verify-mfa"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "mfaToken": "{{doctor2_mfa_token}}",
+      "otpCode": "{{doctor2_otp}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('MFA verification returns 200 (token issued)', () => pm.response.to.have.status(200));
+      if (pm.response.code === 200) {
+          const json = pm.response.json();
+          pm.environment.set('doctor2_jwt', json.token);
+          
+          if (json.user.patient_id) pm.environment.set('doctor2_id', json.user.patient_id);
+          if (json.user.doctor_id) pm.environment.set('doctor2_id', json.user.doctor_id);
+      } else {
+          console.error('Doctor 2 MFA verification failed:', pm.response.text());
+      }
+    language: text/javascript
+order: 8000

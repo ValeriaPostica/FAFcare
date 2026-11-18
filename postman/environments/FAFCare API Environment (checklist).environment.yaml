@@ -1,0 +1,60 @@
+name: FAFCare API Environment (checklist)
+values:
+  - key: base_url
+    value: 'http://localhost:5000'
+  - key: seed_password
+    value: Password123!
+  - key: patient_email
+    value: tatiana.braga1@example.md
+  - key: patient_csv_id
+    value: '1'
+  - key: patient_password
+    value: ''
+  - key: patient_mfa_token
+    value: ''
+  - key: patient_otp
+    value: ''
+  - key: patient_jwt
+    value: ''
+  - key: jwt_token
+    value: ''
+  - key: patient_id
+    value: ''
+  - key: other_patient_email
+    value: vitalie.guzun2@example.md
+  - key: other_patient_csv_id
+    value: '2'
+  - key: other_patient_password
+    value: ''
+  - key: other_patient_mfa_token
+    value: ''
+  - key: other_patient_otp
+    value: ''
+  - key: other_patient_jwt
+    value: ''
+  - key: other_patient_id
+    value: ''
+  - key: doctor_email
+    value: doctor.1@fafcare.local
+  - key: doctor_csv_id
+    value: '1'
+  - key: doctor_password
+    value: ''
+  - key: doctor_mfa_token
+    value: ''
+  - key: doctor_otp
+    value: ''
+  - key: doctor_jwt
+    value: ''
+  - key: doctor_id
+    value: ''
+  - key: schedule_slot_id
+    value: ''
+  - key: scheduled_at
+    value: ''
+  - key: appointment_id
+    value: ''
+  - key: taken_slot_id
+    value: ''
+  - key: garbage_token
+    value: not.a.realtoken

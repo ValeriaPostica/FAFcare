@@ -1,0 +1,23 @@
+$kind: http-request
+url: "{{base_url}}/api/appointments"
+method: POST
+headers:
+  Authorization: Bearer {{jwt_token}}
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "patient_id": "{{patient_id}}",
+      "doctor_id": "{{doctor_id}}",
+      "schedule_slot_id": "{{schedule_slot_id}}",
+      "appointment_type": "offline",
+      "scheduled_at": "{{scheduled_at}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 201 or 401', () => pm.expect(pm.response.code).to.be.oneOf([201, 401]));
+      if (pm.response.code === 201) { const res = pm.response.json(); if (res.id) pm.environment.set('appointment_id', res.id); }
+    language: text/javascript
+order: 2000
