@@ -1,0 +1,2 @@
+$kind: collection
+description: Rebuilt from the actual backend source (authController.js, server.js, validation.js, seed.js). The original collection assumed a single-step /api/auth/login that returns a token directly and used hand-typed JWTs with fake signatures - both are why every request 401'd. This version logs in for real (login -> MFA -> token) and pulls real seeded IDs from the public catalog endpoints instead of guessing UUIDs. Run folder 0 first.

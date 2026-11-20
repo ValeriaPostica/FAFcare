@@ -1,0 +1,10 @@
+$kind: http-request
+url: "{{base_url}}/api/appointments"
+method: GET
+headers:
+  Authorization: Bearer {{expired_token}}
+scripts:
+  - type: afterResponse
+    code: pm.test('Status is 401', () => pm.response.to.have.status(401));
+    language: text/javascript
+order: 4000

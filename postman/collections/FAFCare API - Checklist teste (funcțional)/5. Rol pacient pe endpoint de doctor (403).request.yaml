@@ -1,0 +1,19 @@
+$kind: http-request
+url: "{{base_url}}/api/medical-records"
+method: POST
+headers:
+  Content-Type: application/json
+  Authorization: Bearer {{patient_jwt}}
+body:
+  type: json
+  content: |-
+    {
+      "patient_id": "{{other_patient_id}}",
+      "diagnosis": "Test neautorizat",
+      "diagnosis_type": "other"
+    }
+scripts:
+  - type: afterResponse
+    code: pm.test('Status 403', () => pm.response.to.have.status(403));
+    language: text/javascript
+order: 12000

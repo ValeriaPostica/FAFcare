@@ -1,0 +1,4 @@
+$kind: collection
+name: 0. Setup - Login & Get Real Tokens (run this folder first, top to bottom)
+description: "This API does NOT issue a token from a single /api/auth/login call. Login is two steps: (1) POST /api/auth/login checks the password and returns an mfaToken, (2) POST /api/auth/verify-mfa checks a 6-digit OTP and returns the real JWT. The OTP is only present in step 1's response if the backend has MFA_RETURN_OTP=true in its .env; otherwise it is printed to the backend's console log (or emailed if SMTP is configured) and you must paste it into the *_otp variable by hand. NOTE: /api/auth/* is rate-limited to 5 requests per 15 minutes PER IP, shared across login/verify-mfa/register/resend-mfa. Running this whole folder repeatedly will get you 429s until the window resets or the backend restarts - see the chat answer for how to raise this for local testing."
+order: 1000

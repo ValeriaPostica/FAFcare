@@ -1,0 +1,10 @@
+$kind: http-request
+url: "{{base_url}}/api/patients/invalid-uuid-12345/medical-records"
+method: GET
+headers:
+  Authorization: Bearer {{patient_jwt}}
+scripts:
+  - type: afterResponse
+    code: pm.test('Status 400', () => pm.response.to.have.status(400));
+    language: text/javascript
+order: 21000

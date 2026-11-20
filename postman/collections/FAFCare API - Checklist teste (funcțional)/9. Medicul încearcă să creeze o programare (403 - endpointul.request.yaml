@@ -1,0 +1,24 @@
+$kind: http-request
+name: 9. Medicul încearcă să creeze o programare (403 - endpointul e restricționat la rolul patient)
+url: "{{base_url}}/api/appointments"
+method: POST
+headers:
+  Content-Type: application/json
+  Authorization: Bearer {{doctor_jwt}}
+body:
+  type: json
+  content: |-
+    {
+      "doctor_id": "{{doctor_id}}",
+      "schedule_slot_id": "{{schedule_slot_id}}",
+      "appointment_type": "offline",
+      "scheduled_at": "{{scheduled_at}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status 403', () => pm.response.to.have.status(403));
+      // În codul real, POST /api/appointments are requireRole('patient'), deci niciun cont de medic
+      // nu poate crea o programare - nici pe slotul lui, nici pe al altui medic. 403 e comportamentul corect.
+    language: text/javascript
+order: 16000

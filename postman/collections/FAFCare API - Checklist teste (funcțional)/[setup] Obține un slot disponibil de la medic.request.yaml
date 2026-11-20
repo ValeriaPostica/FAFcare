@@ -1,0 +1,17 @@
+$kind: http-request
+url: "{{base_url}}/api/doctors/{{doctor_id}}/schedules"
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status 200', () => pm.response.to.have.status(200));
+      const rows = pm.response.json();
+      if (Array.isArray(rows) && rows.length > 0) {
+          const slot = rows[0];
+          pm.environment.set('schedule_slot_id', slot.id);
+          pm.environment.set('scheduled_at', String(slot.date).slice(0, 10) + 'T' + slot.start_time);
+      } else {
+          console.warn('Medicul nu are sloturi disponibile in seed data - testele de programare de mai jos vor esua pana adaugi unul.');
+      }
+    language: text/javascript
+order: 7000

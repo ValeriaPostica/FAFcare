@@ -1,0 +1,20 @@
+{
+  "id": "fafcare-api-environment",
+  "name": "FAFCare API Environment",
+  "values": [
+    { "key": "base_url", "value": "http://localhost:5174", "enabled": true },
+    { "key": "jwt_token", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImMxZjhhODUwLTg5MWQtNDRhNi05NmE4LTJiODFmYTVkN2JiMSIsImVtYWlsIjoicGF0aWVudEBleGFtcGxlLmNvbSIsInJvbGUiOiJwYXRpZW50IiwiaWF0IjoxNzU4MTg2MDAwLCJleHAiOjI1Mzk2MDk2MDB9.P_V_3-FAFCarePatientTokenSignatureValidationKey", "enabled": true },
+    { "key": "patient_jwt", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImMxZjhhODUwLTg5MWQtNDRhNi05NmE4LTJiODFmYTVkN2JiMSIsImVtYWlsIjoicGF0aWVudEBleGFtcGxlLmNvbSIsInJvbGUiOiJwYXRpZW50IiwiaWF0IjoxNzU4MTg2MDAwLCJleHAiOjI1Mzk2MDk2MDB9.P_V_3-FAFCarePatientTokenSignatureValidationKey", "enabled": true },
+    { "key": "doctor_jwt", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImUzZjhhODUwLTg5MWQtNDRhNi05NmE4LTJiODFmYTVkN2JiMyIsImVtYWlsIjoiZG9jdG9yQGV4YW1wbGUuY29tIiwicm9sZSI6ImRvY3RvciIsImlhdCI6MTc1ODE4NjAwMCwiZXhwIjoyNTM5NjA5NjAwfQ.SignatureForDoctorRoleValidation", "enabled": true },
+    { "key": "other_patient_jwt", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImQyZjhhODUwLTg5MWQtNDRhNi05NmE4LTJiODFmYTVkN2JiMiIsImVtYWlsIjoib3RoZXIucGF0aWVudEBleGFtcGxlLmNvbSIsInJvbGUiOiJwYXRpZW50IiwiaWF0IjoxNzU4MTg2MDAwLCJleHAiOjI1Mzk2MDk2MDB9.SignatureForOtherPatientValidation", "enabled": true },
+    { "key": "patient_id", "value": "c1f8a850-891d-44a6-96a8-2b81fa5d7bb1", "enabled": true },
+    { "key": "other_patient_id", "value": "d2f8a850-891d-44a6-96a8-2b81fa5d7bb2", "enabled": true },
+    { "key": "doctor_id", "value": "e3f8a850-891d-44a6-96a8-2b81fa5d7bb3", "enabled": true },
+    { "key": "schedule_slot_id", "value": "f4f8a850-891d-44a6-96a8-2b81fa5d7bb4", "enabled": true },
+    { "key": "taken_slot_id", "value": "a5f8a850-891d-44a6-96a8-2b81fa5d7bb5", "enabled": true },
+    { "key": "scheduled_at", "value": "2026-10-01T10:00:00Z", "enabled": true },
+    { "key": "appointment_id", "value": "b9f8a850-891d-44a6-96a8-2b81fa5d7bb9", "enabled": true },
+    { "key": "expired_token", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJleHBpcmVkIiwiaWF0IjoxLCJleHAiOjF9.invalidsignature", "enabled": true }
+  ],
+  "_postman_variable_scope": "environment"
+}

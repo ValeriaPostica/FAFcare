@@ -1,0 +1,12 @@
+$kind: http-request
+url: "{{base_url}}/api/appointments?status=confirmed%27%20OR%20%271%27%3D%271"
+method: GET
+headers:
+  Authorization: Bearer {{patient_jwt}}
+queryParams:
+  status: confirmed' OR '1'='1
+scripts:
+  - type: afterResponse
+    code: pm.test('SQLi Query Handled Safely', () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 404]));
+    language: text/javascript
+order: 4000

@@ -1,0 +1,21 @@
+$kind: http-request
+url: "{{base_url}}/api/appointments"
+method: POST
+headers:
+  Content-Type: application/json
+  Authorization: Bearer {{patient_jwt}}
+body:
+  type: json
+  content: |-
+    {
+      "patient_id": "{{other_patient_id}}",
+      "doctor_id": "{{doctor_id}}",
+      "schedule_slot_id": "{{schedule_slot_id}}",
+      "appointment_type": "offline",
+      "scheduled_at": "{{scheduled_at}}"
+    }
+scripts:
+  - type: afterResponse
+    code: pm.test('Status is 403', () => pm.response.to.have.status(403));
+    language: text/javascript
+order: 4000

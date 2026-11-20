@@ -1,0 +1,24 @@
+$kind: http-request
+url: "{{base_url}}/api/appointments"
+method: POST
+headers:
+  Content-Type: application/json
+  Authorization: Bearer {{other_patient_jwt}}
+body:
+  type: json
+  content: |-
+    {
+      "doctor_id": "{{doctor_id}}",
+      "schedule_slot_id": "{{taken_slot_id}}",
+      "appointment_type": "offline",
+      "scheduled_at": "{{scheduled_at}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status 409', () => pm.response.to.have.status(409));
+      // Rulat imediat după testul 10, pe același slot: în DB, UPDATE ... WHERE is_available = TRUE e
+      // atomic, deci a doua cerere care "câștigă cursa" pentru același slot primește tot 409.
+      // Pentru o cursă adevărată, rulează testele 10 și 11 din Postman Runner cu "Run collection in parallel" activat.
+    language: text/javascript
+order: 19000
