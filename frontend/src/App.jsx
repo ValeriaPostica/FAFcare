@@ -214,12 +214,10 @@ const formatTimeDisplay = (t) => {
   return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${meridiem}`;
 };
 
-const to24Hour = (time) => {
-  const [clock, meridiem] = time.split(' ');
-  let [hours, minutes] = clock.split(':').map(Number);
-  if (meridiem === 'PM' && hours !== 12) hours += 12;
-  if (meridiem === 'AM' && hours === 12) hours = 0;
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+const todayDateInputValue = () => {
+  const date = new Date();
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 10);
 };
 
 export default function App() {
@@ -280,8 +278,11 @@ export default function App() {
   const [bookingStep, setBookingStep] = useState(1);
   const [selectedSpec, setSelectedSpec] = useState(null);
   const [selectedDoctor, setSelectedDoctor] = useState(null);
-  const [selectedDate, setSelectedDate] = useState('2026-09-15');
-  const [selectedTime, setSelectedTime] = useState('10:00 AM');
+  const [selectedDate, setSelectedDate] = useState(todayDateInputValue);
+  const [selectedScheduleSlotId, setSelectedScheduleSlotId] = useState(null);
+  const [scheduleSlots, setScheduleSlots] = useState([]);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [bookingError, setBookingError] = useState(null);
 
   const [isCompleteModalOpen, setIsCompleteModalOpen] = useState(false);
   const [selectedAppointmentToComplete, setSelectedAppointmentToComplete] = useState(null);
@@ -299,7 +300,7 @@ export default function App() {
   const [formData, setFormData] = useState({ fullName: '', email: '', phone: '', password: '', confirmPassword: '' });
   const [otpCode, setOtpCode] = useState('');
 
-  const availableTimeSlots = ['09:00 AM', '10:30 AM', '01:15 PM', '03:00 PM', '04:30 PM'];
+  const availableTimeSlots = scheduleSlots.filter((slot) => String(slot.date).slice(0, 10) === selectedDate);
 
   /* ---------- API ---------- */
   const api = async (path, options = {}) => {
@@ -371,6 +372,32 @@ export default function App() {
   }, []);
 
   useEffect(() => { loadAppointments().catch(() => {}); }, [loadAppointments]);
+
+  useEffect(() => {
+    if (bookingStep !== 3 || !selectedDoctor) {
+      setScheduleSlots([]);
+      return;
+    }
+
+    let active = true;
+    setScheduleLoading(true);
+    setBookingError(null);
+    api(`/doctors/${selectedDoctor.id}/schedules`)
+      .then((slots) => {
+        if (!active) return;
+        setScheduleSlots(slots);
+        const firstSlot = slots.find((slot) => String(slot.date).slice(0, 10) === selectedDate);
+        setSelectedScheduleSlotId(firstSlot?.id || null);
+      })
+      .catch((error) => {
+        if (active) setBookingError(`Available times could not be loaded: ${error.message}`);
+      })
+      .finally(() => {
+        if (active) setScheduleLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [selectedDoctor?.id, bookingStep]);
 
   useEffect(() => {
     if (currentUser?.role !== 'Doctor') {
@@ -537,28 +564,46 @@ export default function App() {
 
 // Finish booking
 const handleConfirmBooking = async () => {
-  const slot = await api(`/doctors/${selectedDoctor.id}/schedules`);
-  const selectedSlot = slot.find((item) => item.date.toString().slice(0, 10) === selectedDate) || slot[0];
+  setBookingError(null);
+  const selectedSlot = availableTimeSlots.find((slot) => slot.id === selectedScheduleSlotId);
+  if (!selectedSlot) {
+    setBookingError('Select an available time slot.');
+    return;
+  }
 
-  await api('/appointments', { 
-    method: 'POST', 
-    body: JSON.stringify({
-      patient_id: currentUser.patient_id, 
-      doctor_id: selectedDoctor.id, 
-      schedule_slot_id: selectedSlot?.id,
-      appointment_type: 'offline', 
-      scheduled_at: `${selectedDate}T${to24Hour(selectedTime)}`,
-    }) 
-  });
+  const requestedDateTime = new Date(`${selectedDate}T${normalizeTime(selectedSlot.start_time)}`);
+  if (Number.isNaN(requestedDateTime.getTime()) || requestedDateTime < new Date()) {
+    setBookingError('Appointment date and time must be now or in the future.');
+    return;
+  }
 
-  await loadAppointments(currentUser);
-  setIsBookingOpen(false);
-  setBookingStep(1);
-  setSelectedSpec(null);
-  setSelectedDoctor(null);
-  setActiveTab('appointments');
-  setNotification('Your appointment was booked successfully!');
-  setTimeout(() => setNotification(null), 4000);
+  try {
+    await api('/appointments', {
+      method: 'POST',
+      body: JSON.stringify({
+        patient_id: currentUser.patient_id,
+        doctor_id: selectedDoctor.id,
+        schedule_slot_id: selectedSlot.id,
+        appointment_type: 'offline',
+        scheduled_at: `${selectedDate}T${selectedSlot.start_time}`,
+      }),
+    });
+
+    await loadAppointments(currentUser);
+    setIsBookingOpen(false);
+    setBookingStep(1);
+    setSelectedSpec(null);
+    setSelectedDoctor(null);
+    setActiveTab('appointments');
+    setNotification('Your appointment was booked successfully!');
+    setTimeout(() => setNotification(null), 4000);
+  } catch (error) {
+    if (error.message.includes('must be in the future') || error.message.includes('schedule slot is in the past')) {
+      setBookingError('Appointment date and time must be now or in the future.');
+    } else {
+      setBookingError(error.message);
+    }
+  }
 };
 
   const handleSaveConsultationCompletion = async (e) => {
@@ -2666,7 +2711,19 @@ const handleConfirmBooking = async () => {
 
                     <div>
                       <label className={labelClass}>Appointment date</label>
-                      <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className={`${inputClass} tnum`} />
+                      <input
+                        type="date"
+                        min={todayDateInputValue()}
+                        value={selectedDate}
+                        onChange={(e) => {
+                          setSelectedDate(e.target.value);
+                          setBookingError(null);
+                          const dateSlots = scheduleSlots.filter((slot) => String(slot.date).slice(0, 10) === e.target.value);
+                          setSelectedScheduleSlotId(dateSlots[0]?.id || null);
+                        }}
+                        className={`${inputClass} tnum`}
+                      />
+                      <p className="mt-1.5 text-xs text-slate-500">Booking is only available for today or future dates.</p>
                     </div>
 
                     <div>
@@ -2674,20 +2731,30 @@ const handleConfirmBooking = async () => {
                       <div className="grid grid-cols-3 gap-2">
                         {availableTimeSlots.map((slot) => (
                           <button
-                            key={slot}
+                            key={slot.id}
                             type="button"
-                            onClick={() => setSelectedTime(slot)}
+                            onClick={() => { setSelectedScheduleSlotId(slot.id); setBookingError(null); }}
                             className={`tnum rounded-xl border py-2.5 text-xs font-semibold transition-all duration-200 ease-in-out ${
-                              selectedTime === slot
+                              selectedScheduleSlotId === slot.id
                                 ? 'border-emerald-600 bg-emerald-600 text-white fc-e1'
                                 : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-300 hover:text-emerald-700'
                             }`}
                           >
-                            {slot}
+                            {formatTimeDisplay(slot.start_time)}
                           </button>
                         ))}
                       </div>
+                      {!scheduleLoading && availableTimeSlots.length === 0 && (
+                        <p className="mt-2 text-sm text-slate-500">No available times on this date.</p>
+                      )}
+                      {scheduleLoading && <p className="mt-2 text-sm text-slate-500">Loading available times...</p>}
                     </div>
+
+                    {bookingError && (
+                      <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                        {bookingError}
+                      </p>
+                    )}
 
                     <div className="border-t border-slate-100 pt-5">
                       <button type="button" onClick={handleConfirmBooking} className={primaryButtonClass}>

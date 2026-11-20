@@ -25,8 +25,16 @@ export async function doctors(req, res, next) {
 export async function schedules(req, res, next) {
   try {
     const { rows } = await query(`
-      SELECT id, doctor_id, date, start_time, end_time
-      FROM doctor_schedules WHERE doctor_id = $1 AND is_available = TRUE ORDER BY date, start_time
+      SELECT ds.id, ds.doctor_id, ds.date, ds.start_time, ds.end_time
+      FROM doctor_schedules ds
+      LEFT JOIN appointments a
+        ON a.schedule_slot_id = ds.id
+       AND a.status <> 'cancelled'
+      WHERE ds.doctor_id = $1
+        AND ds.is_available = TRUE
+        AND a.id IS NULL
+        AND (ds.date + ds.start_time) >= NOW()
+      ORDER BY ds.date ASC, ds.start_time ASC
     `, [req.params.doctorId]);
     res.json(rows);
   } catch (error) { next(error); }

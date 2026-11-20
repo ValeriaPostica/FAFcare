@@ -146,6 +146,31 @@ async function seed() {
         [uuidFor('schedule', row.id), uuidFor('doctor', row.doctor_id), row.date, row.start_time, row.end_time, row.is_available !== '0']);
     }
 
+    await client.query(`
+      INSERT INTO doctor_schedules (doctor_id, date, start_time, end_time, is_available)
+      SELECT d.id, schedule_date::date, appointment_time.start_time,
+             appointment_time.start_time + INTERVAL '30 minutes', TRUE
+      FROM doctors d
+      CROSS JOIN generate_series(
+        CURRENT_DATE,
+        CURRENT_DATE + INTERVAL '30 days',
+        INTERVAL '1 day'
+      ) AS dates(schedule_date)
+      CROSS JOIN (VALUES
+        ('09:00'::time), ('09:30'::time), ('10:00'::time), ('10:30'::time),
+        ('11:00'::time), ('11:30'::time), ('13:00'::time), ('13:30'::time),
+        ('14:00'::time), ('14:30'::time), ('15:00'::time), ('15:30'::time)
+      ) AS appointment_time(start_time)
+      WHERE EXTRACT(ISODOW FROM schedule_date) < 6
+        AND NOT EXISTS (
+          SELECT 1
+          FROM doctor_schedules existing
+          WHERE existing.doctor_id = d.id
+            AND existing.date = schedule_date::date
+            AND existing.start_time = appointment_time.start_time
+        )
+    `);
+
     for (const row of await csvRows('appointments.csv')) {
       const price = numericOr(row.price_mdl, numericOr(row.appointment_category));
       await client.query(`INSERT INTO appointments (id, patient_id, doctor_id, schedule_slot_id, appointment_type, status, scheduled_at, created_at, price)
