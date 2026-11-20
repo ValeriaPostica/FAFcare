@@ -52,6 +52,14 @@ export async function createAppointment(req, res, next) {
       return res.status(400).json({ error: 'doctor_id, schedule_slot_id and scheduled_at are required' });
     }
 
+    const scheduledTimeResult = await client.query(
+      'SELECT $1::timestamp < NOW() AS is_past',
+      [scheduled_at]
+    );
+    if (scheduledTimeResult.rows[0].is_past) {
+      return res.status(400).json({ error: 'scheduled_at must be in the future' });
+    }
+
     if (patient_id && patient_id !== req.user.patientId) {
       return res.status(403).json({ error: 'You can create appointments only for yourself' });
     }
@@ -85,18 +93,20 @@ export async function createAppointment(req, res, next) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'Schedule slot is already booked' });
     }
-/*
-    const matchingTime = await client.query(
-      'SELECT ($1::timestamp = ($2::date + $3::time)) AS matches',
-      [scheduled_at, slot.date, slot.start_time]
+    const slotTimeResult = await client.query(
+      `SELECT ($1::date + $2::time) < NOW() AS is_past,
+              ($1::date + $2::time) = $3::timestamp AS matches`,
+      [slot.date, slot.start_time, scheduled_at]
     );
-    if (!matchingTime.rows[0].matches) {
+    if (slotTimeResult.rows[0].is_past) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'The selected schedule slot is in the past' });
+    }
+    if (!slotTimeResult.rows[0].matches) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'scheduled_at must match the selected schedule slot' });
     }
-*/
 
-    const calculatedScheduledAt = `${slot.date.toISOString().slice(0, 10)}T${slot.start_time}`;
     const updatedSlot = await client.query(
       'UPDATE doctor_schedules SET is_available = FALSE WHERE id = $1 AND is_available = TRUE RETURNING id',
       [schedule_slot_id]
